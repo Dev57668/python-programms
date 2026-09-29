@@ -1,88 +1,186 @@
-"""
-Database Module for Code Lifejacket.
-Stores metadata, file snapshot histories, content hashes, and deletion records
-in a thread-safe JSON file inside .lifejacket/metadata.json.
-"""
-
 import json
-import os
+import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from utils import format_timestamp
 
-
 class Database:
-    """Manages metadata persistence for snapshots, tracked files, and deletions."""
+    """Manages metadata persistence for snapshots, tracked files, and deletions using SQLite."""
 
     def __init__(self, db_path: Path):
         """
         Initialize database.
         
         Args:
-            db_path: Path to the metadata.json file.
+            db_path: Path to the database file. If this ends in metadata.json,
+                     it will be converted to vault.db in the same directory.
         """
-        self.db_path = Path(db_path)
-        self.lock = threading.Lock()
-        self.data: Dict[str, Any] = {
-            "version": "1.0",
-            "next_snapshot_id": 1,
-            "tracked_files": {},
-            "snapshots": [],
-            "deletions": []
-        }
-        self._load()
+        original_path = Path(db_path)
+        if original_path.name == "metadata.json":
+            self.db_path = original_path.parent / "vault.db"
+            self.json_path = original_path
+        else:
+            self.db_path = original_path
+            self.json_path = original_path.with_name("metadata.json")
 
-    def _load(self) -> None:
-        """Load database from disk. If missing or corrupted, initializes empty state."""
-        with self.lock:
-            if not self.db_path.exists():
-                return
-
-            try:
-                with open(self.db_path, "r", encoding="utf-8") as f:
-                    content = json.load(f)
-                    self.data["version"] = content.get("version", "1.0")
-                    self.data["next_snapshot_id"] = content.get("next_snapshot_id", 1)
-                    self.data["tracked_files"] = content.get("tracked_files", {})
-                    self.data["snapshots"] = content.get("snapshots", [])
-                    self.data["deletions"] = content.get("deletions", [])
-            except Exception:
-                # If file exists but is corrupted, do not crash
-                pass
-
-    def _save(self) -> None:
-        """Atomically save database state to disk using a temporary file."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = self.db_path.with_suffix(".tmp")
+        self._init_db()
+        self._migrate_if_needed()
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a configured new SQLite connection."""
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self) -> None:
+        """Initialize the database schema."""
+        with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS meta (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            ''')
+            conn.execute("INSERT OR IGNORE INTO meta VALUES ('schema_version', '1')")
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS files (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path         TEXT NOT NULL UNIQUE,
+                    status       TEXT NOT NULL DEFAULT 'active'
+                                 CHECK (status IN ('active', 'deleted')),
+                    first_seen   TEXT NOT NULL,
+                    last_seen    TEXT NOT NULL,
+                    deleted_at   TEXT
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS blobs (
+                    hash         TEXT PRIMARY KEY,
+                    size         INTEGER NOT NULL,
+                    stored_size  INTEGER NOT NULL,
+                    compressed   INTEGER NOT NULL DEFAULT 0 CHECK (compressed IN (0, 1)),
+                    created_at   TEXT NOT NULL
+                )
+            ''')
+
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS snapshots (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_id      INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                    blob_hash    TEXT    NOT NULL REFERENCES blobs(hash),
+                    snapshot_path TEXT   NOT NULL,
+                    created_at   TEXT    NOT NULL,
+                    event_type   TEXT    NOT NULL,
+                    pinned       INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+                    note         TEXT
+                )
+            ''')
+
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_file_time ON snapshots(file_id, created_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_blob      ON snapshots(blob_hash)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_time      ON snapshots(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_files_status        ON files(status)")
+
+    def _migrate_if_needed(self) -> None:
+        """Migrate existing metadata.json if it exists."""
+        if not self.json_path.exists():
+            return
+        
+        migrated_path = self.json_path.with_name(self.json_path.name + ".migrated")
+        
         try:
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=2)
-            temp_path.replace(self.db_path)
-        except Exception as e:
-            if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
-            raise e
+            with open(self.json_path, "r", encoding="utf-8") as f:
+                content = json.load(f)
+        except Exception:
+            return
+
+        with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            
+            # Insert tracked files
+            tracked_files = content.get("tracked_files", {})
+            for path, meta in tracked_files.items():
+                conn.execute('''
+                    INSERT OR IGNORE INTO files (path, status, first_seen, last_seen, deleted_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    path, 
+                    meta.get("status", "active"), 
+                    meta.get("first_seen", format_timestamp()),
+                    meta.get("last_modified", format_timestamp()),
+                    None
+                ))
+
+            # Insert deletions
+            deletions = content.get("deletions", [])
+            for deletion in deletions:
+                path = deletion.get("relative_path")
+                ts = deletion.get("timestamp")
+                conn.execute("UPDATE files SET status = 'deleted', deleted_at = ? WHERE path = ?", (ts, path))
+                # Also create file if missing
+                conn.execute('''
+                    INSERT OR IGNORE INTO files (path, status, first_seen, last_seen, deleted_at)
+                    VALUES (?, 'deleted', ?, ?, ?)
+                ''', (path, ts, ts, ts))
+
+            # Insert snapshots and blobs
+            snapshots = content.get("snapshots", [])
+            for snap in snapshots:
+                path = snap.get("relative_path")
+                blob_hash = snap.get("hash")
+                size = snap.get("size", 0)
+                ts = snap.get("timestamp")
+                snapshot_path = snap.get("snapshot_path")
+                event_type = snap.get("event_type", "modified")
+                
+                # Blob
+                if blob_hash:
+                    conn.execute('''
+                        INSERT OR IGNORE INTO blobs (hash, size, stored_size, compressed, created_at)
+                        VALUES (?, ?, ?, 0, ?)
+                    ''', (blob_hash, size, size, ts))
+
+                # Snapshot
+                # Get file id
+                file_row = conn.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()
+                if file_row and blob_hash:
+                    file_id = file_row["id"]
+                    
+                    # Check if exists to make idempotent
+                    exists = conn.execute("SELECT 1 FROM snapshots WHERE snapshot_path = ?", (snapshot_path,)).fetchone()
+                    if not exists:
+                        conn.execute('''
+                            INSERT INTO snapshots (file_id, blob_hash, snapshot_path, created_at, event_type)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (file_id, blob_hash, snapshot_path, ts, event_type))
+
+        # Rename the json file safely
+        try:
+            self.json_path.rename(migrated_path)
+        except OSError:
+            pass
 
     def get_last_hash(self, relative_path: str) -> Optional[str]:
-        """
-        Get the SHA-256 hash of the most recent snapshot for a file.
-        
-        Args:
-            relative_path: Relative path of the file.
-            
-        Returns:
-            Last SHA-256 string or None if never backed up.
-        """
-        with self.lock:
-            file_meta = self.data["tracked_files"].get(relative_path)
-            if file_meta:
-                return file_meta.get("last_hash")
+        with self._get_connection() as conn:
+            row = conn.execute('''
+                SELECT s.blob_hash
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                WHERE f.path = ?
+                ORDER BY s.created_at DESC, s.id DESC
+                LIMIT 1
+            ''', (relative_path,)).fetchone()
+            if row:
+                return row["blob_hash"]
             return None
 
     def add_snapshot(
@@ -93,26 +191,38 @@ class Database:
         file_size: int,
         event_type: str = "modified"
     ) -> Dict[str, Any]:
-        """
-        Record a new snapshot in the database.
-        
-        Args:
-            relative_path: Relative path of the source file.
-            snapshot_path: Relative path of the saved snapshot backup.
-            file_hash: SHA-256 hash of the backed-up file.
-            file_size: Size of the file in bytes.
-            event_type: Type of event ('created' or 'modified').
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            now_str = format_timestamp()
+
+            # Insert or update file
+            conn.execute('''
+                INSERT INTO files (path, status, first_seen, last_seen)
+                VALUES (?, 'active', ?, ?)
+                ON CONFLICT(path) DO UPDATE SET 
+                    status = 'active',
+                    last_seen = excluded.last_seen,
+                    deleted_at = NULL
+            ''', (relative_path, now_str, now_str))
             
-        Returns:
-            The created snapshot record dictionary.
-        """
-        with self.lock:
-            snapshot_id = self.data["next_snapshot_id"]
-            self.data["next_snapshot_id"] += 1
+            file_row = conn.execute("SELECT id FROM files WHERE path = ?", (relative_path,)).fetchone()
+            file_id = file_row["id"]
 
-            now_str = format_timestamp(datetime.now())
+            # Insert blob if not exists
+            conn.execute('''
+                INSERT OR IGNORE INTO blobs (hash, size, stored_size, compressed, created_at)
+                VALUES (?, ?, ?, 0, ?)
+            ''', (file_hash, file_size, file_size, now_str))
 
-            record = {
+            # Insert snapshot
+            cursor = conn.execute('''
+                INSERT INTO snapshots (file_id, blob_hash, snapshot_path, created_at, event_type)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (file_id, file_hash, snapshot_path, now_str, event_type))
+            
+            snapshot_id = cursor.lastrowid
+            
+            return {
                 "id": snapshot_id,
                 "relative_path": relative_path,
                 "snapshot_path": snapshot_path,
@@ -122,126 +232,149 @@ class Database:
                 "event_type": event_type
             }
 
-            self.data["snapshots"].append(record)
-
-            # Update tracked_files metadata
-            if relative_path not in self.data["tracked_files"]:
-                self.data["tracked_files"][relative_path] = {
-                    "first_seen": now_str,
-                    "last_modified": now_str,
-                    "last_hash": file_hash,
-                    "status": "active",
-                    "snapshot_count": 1
-                }
-            else:
-                entry = self.data["tracked_files"][relative_path]
-                entry["last_modified"] = now_str
-                entry["last_hash"] = file_hash
-                entry["status"] = "active"
-                entry["snapshot_count"] = entry.get("snapshot_count", 0) + 1
-
-            self._save()
-            return record
-
     def record_deletion(self, relative_path: str) -> Optional[Dict[str, Any]]:
-        """
-        Record a deletion event for a tracked file.
-        
-        Args:
-            relative_path: Relative path of the deleted file.
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            file_row = conn.execute("SELECT id, status FROM files WHERE path = ?", (relative_path,)).fetchone()
             
-        Returns:
-            Deletion record dict or None if file was not tracked.
-        """
-        with self.lock:
-            file_meta = self.data["tracked_files"].get(relative_path)
-            if not file_meta:
+            if not file_row or file_row["status"] == "deleted":
                 return None
-
-            file_meta["status"] = "deleted"
-            now_str = format_timestamp(datetime.now())
-
-            # Find latest snapshot path
-            latest_snapshot = None
-            for s in reversed(self.data["snapshots"]):
-                if s["relative_path"] == relative_path:
-                    latest_snapshot = s["snapshot_path"]
-                    break
-
-            deletion_record = {
+            
+            now_str = format_timestamp()
+            conn.execute("UPDATE files SET status = 'deleted', deleted_at = ? WHERE path = ?", (now_str, relative_path))
+            
+            # Get last hash and snapshot path
+            last_snap = conn.execute('''
+                SELECT blob_hash, snapshot_path 
+                FROM snapshots 
+                WHERE file_id = ? 
+                ORDER BY created_at DESC, id DESC 
+                LIMIT 1
+            ''', (file_row["id"],)).fetchone()
+            
+            return {
                 "relative_path": relative_path,
                 "timestamp": now_str,
-                "last_known_hash": file_meta.get("last_hash"),
-                "last_snapshot_path": latest_snapshot
+                "last_known_hash": last_snap["blob_hash"] if last_snap else None,
+                "last_snapshot_path": last_snap["snapshot_path"] if last_snap else None
             }
-
-            self.data["deletions"].append(deletion_record)
-            self._save()
-            return deletion_record
 
     def get_snapshots_for_file(self, relative_path: str) -> List[Dict[str, Any]]:
-        """Return all snapshot records for a given relative path (chronological)."""
-        with self.lock:
-            return [
-                s for s in self.data["snapshots"]
-                if s["relative_path"] == relative_path
-            ]
+        with self._get_connection() as conn:
+            rows = conn.execute('''
+                SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
+                       s.blob_hash as hash, b.size, s.event_type
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                JOIN blobs b ON s.blob_hash = b.hash
+                WHERE f.path = ?
+                ORDER BY s.created_at ASC, s.id ASC
+            ''', (relative_path,)).fetchall()
+            
+            return [dict(row) for row in rows]
 
     def get_all_snapshots(self) -> List[Dict[str, Any]]:
-        """Return a copy of all snapshot records."""
-        with self.lock:
-            return list(self.data["snapshots"])
+        with self._get_connection() as conn:
+            rows = conn.execute('''
+                SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
+                       s.blob_hash as hash, b.size, s.event_type
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                JOIN blobs b ON s.blob_hash = b.hash
+                ORDER BY s.created_at ASC, s.id ASC
+            ''').fetchall()
+            
+            return [dict(row) for row in rows]
 
     def get_tracked_files(self) -> Dict[str, Any]:
-        """Return a copy of all tracked files and their status."""
-        with self.lock:
-            return dict(self.data["tracked_files"])
+        with self._get_connection() as conn:
+            rows = conn.execute('''
+                SELECT f.id, f.path, f.first_seen, f.last_seen, f.status,
+                       (SELECT blob_hash FROM snapshots WHERE file_id = f.id ORDER BY created_at DESC, id DESC LIMIT 1) as last_hash,
+                       (SELECT COUNT(*) FROM snapshots WHERE file_id = f.id) as snapshot_count
+                FROM files f
+            ''').fetchall()
+            
+            result = {}
+            for row in rows:
+                result[row["path"]] = {
+                    "first_seen": row["first_seen"],
+                    "last_modified": row["last_seen"],
+                    "last_hash": row["last_hash"],
+                    "status": row["status"],
+                    "snapshot_count": row["snapshot_count"]
+                }
+            self._cached_tracked = result
+            return result
+
+    def _save(self) -> None:
+        """Compatibility method for older code that modified tracked files in-place and saved."""
+        if hasattr(self, '_cached_tracked'):
+            with self._get_connection() as conn:
+                conn.execute("BEGIN EXCLUSIVE")
+                for path, meta in self._cached_tracked.items():
+                    conn.execute("UPDATE files SET status = ? WHERE path = ?", (meta["status"], path))
 
     def get_deletions(self) -> List[Dict[str, Any]]:
-        """Return a copy of all deletion records."""
-        with self.lock:
-            return list(self.data["deletions"])
+        with self._get_connection() as conn:
+            rows = conn.execute('''
+                SELECT f.path, f.deleted_at,
+                       (SELECT blob_hash FROM snapshots WHERE file_id = f.id ORDER BY created_at DESC, id DESC LIMIT 1) as last_known_hash,
+                       (SELECT snapshot_path FROM snapshots WHERE file_id = f.id ORDER BY created_at DESC, id DESC LIMIT 1) as last_snapshot_path
+                FROM files f
+                WHERE f.status = 'deleted'
+            ''').fetchall()
+            
+            return [{
+                "relative_path": row["path"],
+                "timestamp": row["deleted_at"],
+                "last_known_hash": row["last_known_hash"],
+                "last_snapshot_path": row["last_snapshot_path"]
+            } for row in rows]
 
     def prune_old_snapshots(self, relative_path: str, max_allowed: int) -> List[Dict[str, Any]]:
-        """
-        Identify and remove snapshot records exceeding max_allowed for a file.
-        Returns the list of removed records so their physical files can be deleted.
-        """
-        with self.lock:
-            file_snaps = [
-                s for s in self.data["snapshots"]
-                if s["relative_path"] == relative_path
-            ]
-
-            if len(file_snaps) <= max_allowed:
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            
+            # Fetch all snapshots for file ordered by time ascending
+            rows = conn.execute('''
+                SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
+                       s.blob_hash as hash, b.size, s.event_type
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                JOIN blobs b ON s.blob_hash = b.hash
+                WHERE f.path = ?
+                ORDER BY s.created_at ASC, s.id ASC
+            ''', (relative_path,)).fetchall()
+            
+            if len(rows) <= max_allowed:
                 return []
+                
+            excess_count = len(rows) - max_allowed
+            to_remove = rows[:excess_count]
+            
+            removed_dicts = []
+            for row in to_remove:
+                # Ensure we never delete a file while another snapshot still references the same path
+                same_path_refs = conn.execute(
+                    "SELECT COUNT(*) FROM snapshots WHERE snapshot_path = ? AND id != ?", 
+                    (row["snapshot_path"], row["id"])
+                ).fetchone()[0]
+                
+                conn.execute("DELETE FROM snapshots WHERE id = ?", (row["id"],))
+                
+                row_dict = dict(row)
+                if same_path_refs > 0:
+                    # Modify dict so caller won't delete the physical file
+                    row_dict["snapshot_path"] = "/dev/null/do_not_delete" 
+                
+                removed_dicts.append(row_dict)
 
-            # Remove oldest
-            excess_count = len(file_snaps) - max_allowed
-            to_remove = file_snaps[:excess_count]
-            remove_ids = {s["id"] for s in to_remove}
-
-            self.data["snapshots"] = [
-                s for s in self.data["snapshots"]
-                if s["id"] not in remove_ids
-            ]
-
-            if relative_path in self.data["tracked_files"]:
-                self.data["tracked_files"][relative_path]["snapshot_count"] = max(
-                    0, self.data["tracked_files"][relative_path].get("snapshot_count", len(file_snaps)) - excess_count
-                )
-
-            self._save()
-            return to_remove
+            return removed_dicts
 
     def clear(self) -> None:
-        """Reset the database to an empty state."""
-        with self.lock:
-            self.data = {
-                "version": "1.0",
-                "next_snapshot_id": 1,
-                "tracked_files": {},
-                "snapshots": [],
-                "deletions": []
-            }
-            self._save()
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("DELETE FROM snapshots")
+            conn.execute("DELETE FROM blobs")
+            conn.execute("DELETE FROM files")

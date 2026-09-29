@@ -84,20 +84,7 @@ class BackupEngine:
         # 3. Calculate relative path within the project
         relative_path_str = get_relative_path(resolved_path, self.project_dir)
 
-        # 4. Compute SHA-256 hash to detect duplicates
-        current_hash = compute_file_hash(resolved_path)
-        if not current_hash:
-            logger.warning(f"Could not read {relative_path_str} (file may be locked). Will retry on next change.")
-            return None
-
-        last_hash = self.db.get_last_hash(relative_path_str)
-        if last_hash == current_hash:
-            logger.info(
-                f"[Deduplication] Content unchanged for {relative_path_str} (SHA-256: {current_hash[:8]}...). Snapshot skipped."
-            )
-            return None
-
-        # 5. Build snapshot path preserving relative directory structure
+        # 4. Build snapshot path preserving relative directory structure
         timestamp_str = format_timestamp_filename(datetime.now())
         rel_path_obj = Path(relative_path_str)
 
@@ -108,12 +95,21 @@ class BackupEngine:
         snapshot_filename = f"{rel_path_obj.name}.{timestamp_str}.bak"
         snapshot_dest_path = dest_subdir / snapshot_filename
 
-        # 6. Copy file preserving file metadata
+        # 5. Copy file atomically and compute hash simultaneously
         try:
-            shutil.copy2(resolved_path, snapshot_dest_path)
-            file_size = snapshot_dest_path.stat().st_size
-        except (OSError, PermissionError) as e:
+            from utils import atomic_copy_and_hash
+            current_hash, file_size = atomic_copy_and_hash(resolved_path, snapshot_dest_path)
+        except Exception as e:
             logger.error(f"Failed to create snapshot copy for {relative_path_str}: {e}")
+            return None
+
+        # 6. Deduplication check
+        last_hash = self.db.get_last_hash(relative_path_str)
+        if last_hash == current_hash:
+            logger.info(
+                f"[Deduplication] Content unchanged for {relative_path_str} (SHA-256: {current_hash[:8]}...). Snapshot skipped."
+            )
+            # Remove the copied snapshot because it's a duplicate
             if snapshot_dest_path.exists():
                 try:
                     snapshot_dest_path.unlink()
