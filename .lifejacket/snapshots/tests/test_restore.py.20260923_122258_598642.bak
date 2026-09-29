@@ -1,0 +1,108 @@
+"""
+Unit tests for file restoration and overwrite protection.
+"""
+
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+from config import Config
+from recovery import RecoveryEngine
+
+
+class TestFileRestore(unittest.TestCase):
+    """Test suite for recovering files and enforcing overwrite safety."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp())
+        self.config = Config()
+        self.recovery_engine = RecoveryEngine(self.test_dir, self.config)
+        self.backup_engine = self.recovery_engine.backup_engine
+
+    def tearDown(self):
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_restore_deleted_file(self):
+        """Restores a deleted file to its exact original location and content."""
+        code_file = self.test_dir / "models" / "user.py"
+        code_file.parent.mkdir(parents=True, exist_ok=True)
+        code_file.write_text("class User:\n    pass\n", encoding="utf-8")
+
+        # Create snapshot
+        self.backup_engine.create_snapshot(code_file)
+
+        # Simulate accidental deletion
+        code_file.unlink()
+        self.assertFalse(code_file.exists())
+
+        # Restore file
+        success = self.recovery_engine.restore_file(code_file, force=True, interactive=False)
+        self.assertTrue(success)
+        self.assertTrue(code_file.exists())
+        self.assertEqual(code_file.read_text(encoding="utf-8"), "class User:\n    pass\n")
+
+    def test_restore_specific_version_by_id(self):
+        """Restores a specific earlier version selected by its snapshot ID."""
+        code_file = self.test_dir / "index.js"
+        
+        # Version 1
+        code_file.write_text("const version = 1;", encoding="utf-8")
+        snap1 = self.backup_engine.create_snapshot(code_file)
+
+        # Version 2
+        code_file.write_text("const version = 2;", encoding="utf-8")
+        snap2 = self.backup_engine.create_snapshot(code_file)
+
+        # Restore Version 1 specifically
+        success = self.recovery_engine.restore_file(
+            code_file,
+            snapshot_id=snap1["id"],
+            force=True,
+            interactive=False
+        )
+        self.assertTrue(success)
+        self.assertEqual(code_file.read_text(encoding="utf-8"), "const version = 1;")
+
+    def test_overwrite_protection_requires_confirmation(self):
+        """Existing file must not be overwritten if force is False and non-interactive."""
+        code_file = self.test_dir / "config.py"
+        code_file.write_text("DEBUG = False", encoding="utf-8")
+        snap1 = self.backup_engine.create_snapshot(code_file)
+
+        # Change file on disk
+        code_file.write_text("DEBUG = True # Unsaved changes", encoding="utf-8")
+
+        # Attempt restore without force in non-interactive mode
+        success = self.recovery_engine.restore_file(
+            code_file,
+            snapshot_id=snap1["id"],
+            force=False,
+            interactive=False
+        )
+        self.assertFalse(success, "Should refuse to overwrite without explicit confirmation")
+        # Ensure disk file was NOT overwritten
+        self.assertEqual(code_file.read_text(encoding="utf-8"), "DEBUG = True # Unsaved changes")
+
+    def test_restore_recreates_missing_parent_directories(self):
+        """If the parent directory tree was also deleted, restore recreates it."""
+        nested_file = self.test_dir / "deep" / "nested" / "path" / "app.py"
+        nested_file.parent.mkdir(parents=True, exist_ok=True)
+        nested_file.write_text("print('nested')", encoding="utf-8")
+
+        self.backup_engine.create_snapshot(nested_file)
+
+        # Delete entire tree
+        shutil.rmtree(self.test_dir / "deep")
+        self.assertFalse(nested_file.exists())
+
+        # Restore
+        success = self.recovery_engine.restore_file(nested_file, force=True, interactive=False)
+        self.assertTrue(success)
+        self.assertTrue(nested_file.exists())
+        self.assertEqual(nested_file.read_text(encoding="utf-8"), "print('nested')")
+
+
+if __name__ == "__main__":
+    unittest.main()

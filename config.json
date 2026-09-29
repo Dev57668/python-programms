@@ -1,0 +1,27 @@
+{
+  "monitored_extensions": [
+    ".py",
+    ".java",
+    ".cpp",
+    ".c",
+    ".js",
+    ".ts",
+    ".go",
+    ".rs"
+  ],
+  "ignored_directories": [
+    ".git",
+    "node_modules",
+    "venv",
+    ".venv",
+    "env",
+    "__pycache__",
+    ".lifejacket",
+    ".idea",
+    ".vscode"
+  ],
+  "max_snapshots": 50,
+  "debounce_time": 1.0,
+  "snapshot_directory_name": ".lifejacket",
+  "log_level": "INFO"
+}
