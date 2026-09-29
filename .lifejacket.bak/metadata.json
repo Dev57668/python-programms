@@ -1,0 +1,258 @@
+{
+  "version": "1.0",
+  "next_snapshot_id": 17,
+  "tracked_files": {
+    "backup.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "580b1c4ff14cbd8aa3e0276fac1b2ee1e1f8c47db744a3104cba84ee73615947",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "config.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "ea6ef91de2be8dbc26522c42eb361fa3a7644129eafa9bf377c8905ef34224ed",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "database.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "1c6bfdf6a7c28d3e6eb35c7a5c50c0e8321fd753220b920b587b92ca522d5a94",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "main.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "9c35b92ec65413d78bfb16008f8a03addfafe40b6cafb407e724fc61bf0099fd",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "recovery.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "f2dcb85bcdc2134e0aa9d05e76620fd90246ceccdb269d0e0bf1cd66fde46d16",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "utils.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "4fa69f8d415b4a64052e5a968e7f9612fd6c48d0cdce9cc6c38090c7ec981b0e",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "watcher.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "f240b680c1cd6ba4aecd6bd7283a0fe126018f596b3895dff3814aadb4a0c9b5",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/test_backup.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "ea3a12d90bf97e996478548341a7af6f3616db6deb0ddec47ea45684994e8539",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/test_deletion.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "49fb722d1eda2ec454b0b4284081c90cba97322691857885f599a495f359d8b6",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/test_duplicate.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "048e06705358bc957b470599a34d1298585d228ff5613d3c85d616303715731d",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/test_e2e_cli.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "06e843c045b56f1425ebd120a5b14ff0755e462dfb3bc4cab5f8c83ce6fb9399",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/test_history.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "41b14364f59f1e575d62989ee516336a61ad0b95d35321cae3f638cb2a1c80ea",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/test_restore.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "769ec8987aeb729a77504d31af056c57ea82b4e2f1ad6cad762e2bc8cc7cd864",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "tests/__init__.py": {
+      "first_seen": "2026-09-23 12:22:58",
+      "last_modified": "2026-09-23 12:22:58",
+      "last_hash": "4a2c3673488f3f8ed5698e1b738dd61ea73e596ea0da5cc4c6477f0e6add1925",
+      "status": "active",
+      "snapshot_count": 1
+    },
+    "victim.py": {
+      "first_seen": "2026-09-23 12:28:00",
+      "last_modified": "2026-09-23 12:28:59",
+      "last_hash": "c3eabd21a16505f4f66789d874541aa67fef20c5ef5ce69fdfae1ed886dfdd16",
+      "status": "active",
+      "snapshot_count": 2
+    }
+  },
+  "snapshots": [
+    {
+      "id": 1,
+      "relative_path": "backup.py",
+      "snapshot_path": ".lifejacket/snapshots/backup.py.20260923_122258_488211.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "580b1c4ff14cbd8aa3e0276fac1b2ee1e1f8c47db744a3104cba84ee73615947",
+      "size": 7296,
+      "event_type": "initial"
+    },
+    {
+      "id": 2,
+      "relative_path": "config.py",
+      "snapshot_path": ".lifejacket/snapshots/config.py.20260923_122258_497215.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "ea6ef91de2be8dbc26522c42eb361fa3a7644129eafa9bf377c8905ef34224ed",
+      "size": 4723,
+      "event_type": "initial"
+    },
+    {
+      "id": 3,
+      "relative_path": "database.py",
+      "snapshot_path": ".lifejacket/snapshots/database.py.20260923_122258_505882.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "1c6bfdf6a7c28d3e6eb35c7a5c50c0e8321fd753220b920b587b92ca522d5a94",
+      "size": 8548,
+      "event_type": "initial"
+    },
+    {
+      "id": 4,
+      "relative_path": "main.py",
+      "snapshot_path": ".lifejacket/snapshots/main.py.20260923_122258_514815.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "9c35b92ec65413d78bfb16008f8a03addfafe40b6cafb407e724fc61bf0099fd",
+      "size": 6845,
+      "event_type": "initial"
+    },
+    {
+      "id": 5,
+      "relative_path": "recovery.py",
+      "snapshot_path": ".lifejacket/snapshots/recovery.py.20260923_122258_527152.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "f2dcb85bcdc2134e0aa9d05e76620fd90246ceccdb269d0e0bf1cd66fde46d16",
+      "size": 11613,
+      "event_type": "initial"
+    },
+    {
+      "id": 6,
+      "relative_path": "utils.py",
+      "snapshot_path": ".lifejacket/snapshots/utils.py.20260923_122258_535918.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "4fa69f8d415b4a64052e5a968e7f9612fd6c48d0cdce9cc6c38090c7ec981b0e",
+      "size": 3349,
+      "event_type": "initial"
+    },
+    {
+      "id": 7,
+      "relative_path": "watcher.py",
+      "snapshot_path": ".lifejacket/snapshots/watcher.py.20260923_122258_543372.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "f240b680c1cd6ba4aecd6bd7283a0fe126018f596b3895dff3814aadb4a0c9b5",
+      "size": 7927,
+      "event_type": "initial"
+    },
+    {
+      "id": 8,
+      "relative_path": "tests/test_backup.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/test_backup.py.20260923_122258_551622.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "ea3a12d90bf97e996478548341a7af6f3616db6deb0ddec47ea45684994e8539",
+      "size": 3240,
+      "event_type": "initial"
+    },
+    {
+      "id": 9,
+      "relative_path": "tests/test_deletion.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/test_deletion.py.20260923_122258_562623.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "49fb722d1eda2ec454b0b4284081c90cba97322691857885f599a495f359d8b6",
+      "size": 2700,
+      "event_type": "initial"
+    },
+    {
+      "id": 10,
+      "relative_path": "tests/test_duplicate.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/test_duplicate.py.20260923_122258_572586.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "048e06705358bc957b470599a34d1298585d228ff5613d3c85d616303715731d",
+      "size": 2768,
+      "event_type": "initial"
+    },
+    {
+      "id": 11,
+      "relative_path": "tests/test_e2e_cli.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/test_e2e_cli.py.20260923_122258_583509.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "06e843c045b56f1425ebd120a5b14ff0755e462dfb3bc4cab5f8c83ce6fb9399",
+      "size": 3584,
+      "event_type": "initial"
+    },
+    {
+      "id": 12,
+      "relative_path": "tests/test_history.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/test_history.py.20260923_122258_591304.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "41b14364f59f1e575d62989ee516336a61ad0b95d35321cae3f638cb2a1c80ea",
+      "size": 2784,
+      "event_type": "initial"
+    },
+    {
+      "id": 13,
+      "relative_path": "tests/test_restore.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/test_restore.py.20260923_122258_598642.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "769ec8987aeb729a77504d31af056c57ea82b4e2f1ad6cad762e2bc8cc7cd864",
+      "size": 4088,
+      "event_type": "initial"
+    },
+    {
+      "id": 14,
+      "relative_path": "tests/__init__.py",
+      "snapshot_path": ".lifejacket/snapshots/tests/__init__.py.20260923_122258_607184.bak",
+      "timestamp": "2026-09-23 12:22:58",
+      "hash": "4a2c3673488f3f8ed5698e1b738dd61ea73e596ea0da5cc4c6477f0e6add1925",
+      "size": 36,
+      "event_type": "initial"
+    },
+    {
+      "id": 15,
+      "relative_path": "victim.py",
+      "snapshot_path": ".lifejacket/snapshots/victim.py.20260923_122800_058731.bak",
+      "timestamp": "2026-09-23 12:28:00",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "event_type": "initial"
+    },
+    {
+      "id": 16,
+      "relative_path": "victim.py",
+      "snapshot_path": ".lifejacket/snapshots/victim.py.20260923_122859_807313.bak",
+      "timestamp": "2026-09-23 12:28:59",
+      "hash": "c3eabd21a16505f4f66789d874541aa67fef20c5ef5ce69fdfae1ed886dfdd16",
+      "size": 38,
+      "event_type": "modified"
+    }
+  ],
+  "deletions": []
+}

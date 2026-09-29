@@ -1,11 +1,13 @@
+"""
+Utility functions for Code Lifejacket.
+Includes SHA-256 hashing, path helpers, timestamp formatters, and logging setup.
+"""
+
 import hashlib
 import logging
-import os
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-import tempfile
 
 
 def compute_file_hash(file_path: Path) -> Optional[str]:
@@ -31,78 +33,6 @@ def compute_file_hash(file_path: Path) -> Optional[str]:
         logging.getLogger("lifejacket").debug(f"Unable to read file for hashing {file_path}: {e}")
         return None
 
-def atomic_write(file_path: Path, content: bytes) -> None:
-    """Write bytes to a file atomically."""
-    resolved = file_path.resolve()
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_path_str = tempfile.mkstemp(dir=resolved.parent, prefix=resolved.name + ".", suffix=".tmp")
-    temp_path = Path(temp_path_str)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, resolved)
-    except Exception as e:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-        raise e
-
-def atomic_copy(src_path: Path, dst_path: Path) -> None:
-    """Copy a file atomically by streaming."""
-    resolved_src = src_path.resolve()
-    resolved_dst = dst_path.resolve()
-    resolved_dst.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_path_str = tempfile.mkstemp(dir=resolved_dst.parent, prefix=resolved_dst.name + ".", suffix=".tmp")
-    temp_path = Path(temp_path_str)
-    try:
-        with open(resolved_src, "rb") as fsrc, os.fdopen(fd, "wb") as fdst:
-            while chunk := fsrc.read(65536):
-                fdst.write(chunk)
-            fdst.flush()
-            os.fsync(fdst.fileno())
-        shutil.copystat(resolved_src, temp_path)
-        os.replace(temp_path, resolved_dst)
-    except Exception as e:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-        raise e
-
-def atomic_copy_and_hash(src_path: Path, dst_path: Path) -> tuple[str, int]:
-    """Copy a file atomically by streaming and compute its SHA-256 hash simultaneously."""
-    resolved_src = src_path.resolve()
-    resolved_dst = dst_path.resolve()
-    resolved_dst.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_path_str = tempfile.mkstemp(dir=resolved_dst.parent, prefix=resolved_dst.name + ".", suffix=".tmp")
-    temp_path = Path(temp_path_str)
-    
-    sha256 = hashlib.sha256()
-    file_size = 0
-    
-    try:
-        with open(resolved_src, "rb") as fsrc, os.fdopen(fd, "wb") as fdst:
-            while chunk := fsrc.read(65536):
-                sha256.update(chunk)
-                file_size += len(chunk)
-                fdst.write(chunk)
-            fdst.flush()
-            os.fsync(fdst.fileno())
-        shutil.copystat(resolved_src, temp_path)
-        os.replace(temp_path, resolved_dst)
-        return sha256.hexdigest(), file_size
-    except Exception as e:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-        raise e
 
 def format_timestamp(dt: Optional[datetime] = None) -> str:
     """Return a human-readable timestamp (e.g., 2026-09-23 12:30:15)."""

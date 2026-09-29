@@ -1,0 +1,286 @@
+"""
+Recovery Engine for Code Lifejacket.
+Handles inspecting snapshot history, restoring deleted or overwritten files,
+presenting repository status, and managing snapshot cleanup safely.
+"""
+
+import logging
+import os
+import shutil
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from backup import BackupEngine
+from config import Config
+from database import Database
+from utils import format_size, get_relative_path
+
+logger = logging.getLogger("lifejacket")
+
+
+class RecoveryEngine:
+    """Manages file recovery, history inspection, and status reporting."""
+
+    def __init__(self, project_dir: Path, config: Optional[Config] = None):
+        """
+        Initialize the recovery engine.
+        
+        Args:
+            project_dir: Root directory of the project.
+            config: Optional Config instance.
+        """
+        self.project_dir = Path(project_dir).resolve()
+        self.config = config or Config()
+        self.backup_engine = BackupEngine(self.project_dir, self.config)
+        self.db: Database = self.backup_engine.db
+
+    def get_file_history(self, target_file: Path) -> List[Dict[str, Any]]:
+        """
+        Retrieve all available snapshots for a given file.
+        
+        Args:
+            target_file: Absolute or relative path to the file.
+            
+        Returns:
+            List of snapshot record dictionaries.
+        """
+        resolved_file = Path(target_file).resolve()
+        relative_path = get_relative_path(resolved_file, self.project_dir)
+        return self.db.get_snapshots_for_file(relative_path)
+
+    def print_history(self, target_file: Path) -> None:
+        """Print formatted history for a given file."""
+        resolved_file = Path(target_file).resolve()
+        relative_path = get_relative_path(resolved_file, self.project_dir)
+        snapshots = self.get_file_history(resolved_file)
+
+        print("\n" + "=" * 70)
+        print(f"  Code Lifejacket - File History")
+        print("=" * 70)
+        print(f"File:       {relative_path}")
+
+        # Check current status on disk
+        if resolved_file.exists():
+            print(f"Status:     ACTIVE (exists on disk)")
+        else:
+            print(f"Status:     DELETED / MISSING (safe in Lifejacket backups)")
+
+        if not snapshots:
+            print("\nNo snapshots found for this file.")
+            print("=" * 70 + "\n")
+            return
+
+        print(f"Snapshots:  {len(snapshots)} version(s) available")
+        print("-" * 70)
+        print(f"{'ID':<6}{'Timestamp':<22}{'Size':<12}{'Event':<12}{'SHA-256 (Prefix)':<16}")
+        print("-" * 70)
+
+        for s in snapshots:
+            snap_id = str(s.get("id", ""))
+            ts = s.get("timestamp", "N/A")
+            size_str = format_size(s.get("size", 0))
+            event_type = s.get("event_type", "modified")
+            sha_prefix = s.get("hash", "")[:12]
+            print(f"{snap_id:<6}{ts:<22}{size_str:<12}{event_type:<12}{sha_prefix:<16}")
+
+        print("=" * 70)
+        print(f"To restore a version: python main.py restore {relative_path} --id <ID>\n")
+
+    def restore_file(
+        self,
+        target_file: Path,
+        snapshot_id: Optional[int] = None,
+        force: bool = False,
+        interactive: bool = True
+    ) -> bool:
+        """
+        Restore a file from a selected snapshot.
+        Never overwrites an existing file without explicit confirmation.
+        
+        Args:
+            target_file: Destination file path.
+            snapshot_id: Specific snapshot ID to restore. If None and interactive, prompts user.
+            force: If True, bypass confirmation prompts (e.g. CLI --yes flag).
+            interactive: Whether to prompt for input if needed.
+            
+        Returns:
+            True if restoration was successful, False otherwise.
+        """
+        resolved_dest = Path(target_file).resolve()
+        relative_path = get_relative_path(resolved_dest, self.project_dir)
+        snapshots = self.db.get_snapshots_for_file(relative_path)
+
+        if not snapshots:
+            print(f"\n[Error] No snapshots found for '{relative_path}'. Cannot restore.")
+            return False
+
+        # Select which snapshot to restore
+        chosen_snapshot: Optional[Dict[str, Any]] = None
+
+        if snapshot_id is not None:
+            for s in snapshots:
+                if s["id"] == snapshot_id:
+                    chosen_snapshot = s
+                    break
+            if not chosen_snapshot:
+                print(f"\n[Error] Snapshot ID #{snapshot_id} not found for '{relative_path}'.")
+                return False
+        else:
+            if interactive and len(snapshots) > 1:
+                self.print_history(resolved_dest)
+                prompt_text = f"Select snapshot ID to restore [Default: {snapshots[-1]['id']} (latest)]: "
+                try:
+                    user_input = input(prompt_text).strip()
+                    if not user_input:
+                        chosen_snapshot = snapshots[-1]
+                    else:
+                        selected_id = int(user_input)
+                        for s in snapshots:
+                            if s["id"] == selected_id:
+                                chosen_snapshot = s
+                                break
+                        if not chosen_snapshot:
+                            print(f"[Error] Invalid snapshot ID #{selected_id}.")
+                            return False
+                except (ValueError, EOFError, KeyboardInterrupt):
+                    print("\nRestoration cancelled.")
+                    return False
+            else:
+                # Default to latest snapshot
+                chosen_snapshot = snapshots[-1]
+
+        # Locate snapshot source file
+        source_rel_path = chosen_snapshot.get("snapshot_path")
+        source_abs_path = self.project_dir / source_rel_path
+
+        if not source_abs_path.is_file():
+            print(f"\n[Error] Snapshot file missing on disk: {source_abs_path}")
+            return False
+
+        # Overwrite protection check
+        if resolved_dest.exists() and not force:
+            print(f"\n[Safety Alert] File already exists at: {resolved_dest}")
+            if interactive:
+                try:
+                    confirm = input("Are you sure you want to overwrite it with snapshot? (y/N): ").strip().lower()
+                    if confirm not in ("y", "yes"):
+                        print("Restoration aborted by user. Existing file was not modified.")
+                        return False
+                except (EOFError, KeyboardInterrupt):
+                    print("\nRestoration aborted.")
+                    return False
+            else:
+                print("Aborting: File exists and --yes was not provided.")
+                return False
+
+        # Perform the safe copy
+        try:
+            resolved_dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_abs_path, resolved_dest)
+            
+            # Update tracked file status in db
+            tracked = self.db.get_tracked_files()
+            if relative_path in tracked:
+                tracked[relative_path]["status"] = "active"
+                tracked[relative_path]["last_hash"] = chosen_snapshot.get("hash")
+                self.db._save()
+
+            print(f"\n[Success] Restored '{relative_path}' from Snapshot #{chosen_snapshot['id']}")
+            print(f"          Created at: {chosen_snapshot.get('timestamp')}")
+            print(f"          Restored to: {resolved_dest}")
+            return True
+        except (OSError, PermissionError) as e:
+            print(f"\n[Error] Failed to restore file: {e}")
+            return False
+
+    def print_status(self) -> None:
+        """Display overall status of the protected repository."""
+        tracked_files = self.db.get_tracked_files()
+        all_snapshots = self.db.get_all_snapshots()
+        deletions = self.db.get_deletions()
+
+        # Calculate snapshot folder disk usage
+        total_size = 0
+        if self.backup_engine.snapshots_dir.exists():
+            for root, _, files in os.walk(self.backup_engine.snapshots_dir):
+                for f in files:
+                    try:
+                        total_size += (Path(root) / f).stat().st_size
+                    except OSError:
+                        pass
+
+        active_count = sum(1 for f, meta in tracked_files.items() if (self.project_dir / f).exists())
+        missing_count = sum(1 for f, meta in tracked_files.items() if not (self.project_dir / f).exists())
+
+        print("\n" + "=" * 70)
+        print("  Code Lifejacket - Repository Protection Status")
+        print("=" * 70)
+        print(f"Project Directory:   {self.project_dir}")
+        print(f"Snapshot Storage:    {self.backup_engine.snapshots_dir} ({format_size(total_size)})")
+        print(f"Tracked Extensions:  {', '.join(sorted(self.config.monitored_extensions))}")
+        print(f"Total Snapshots:     {len(all_snapshots)}")
+        print(f"Tracked Files:       {len(tracked_files)} ({active_count} active on disk, {missing_count} deleted)")
+        print(f"Deletion Incidents:  {len(deletions)}")
+        print("-" * 70)
+
+        if missing_count > 0:
+            print("\n[!] DELETED FILES (Recoverable from Lifejacket):")
+            for f, meta in tracked_files.items():
+                if not (self.project_dir / f).exists():
+                    print(f"  - {f} (Last hash: {meta.get('last_hash', '')[:8]}..., Snaps: {meta.get('snapshot_count', 0)})")
+            print("  Run 'python main.py restore <file>' to recover any of them.\n")
+
+        print("=" * 70 + "\n")
+
+    def print_all_snapshots(self) -> None:
+        """Display a table of all snapshots saved across the project."""
+        snapshots = self.db.get_all_snapshots()
+
+        print("\n" + "=" * 80)
+        print("  Code Lifejacket - All Stored Snapshots")
+        print("=" * 80)
+
+        if not snapshots:
+            print("No snapshots stored yet. Run 'python main.py watch <dir>' to start monitoring.")
+            print("=" * 80 + "\n")
+            return
+
+        print(f"{'ID':<6}{'File Path':<35}{'Timestamp':<20}{'Size':<10}{'SHA-256':<10}")
+        print("-" * 80)
+        for s in snapshots:
+            snap_id = str(s.get("id", ""))
+            rel_path = s.get("relative_path", "")
+            if len(rel_path) > 33:
+                rel_path = "..." + rel_path[-30:]
+            ts = s.get("timestamp", "N/A")
+            size_str = format_size(s.get("size", 0))
+            sha_prefix = s.get("hash", "")[:8]
+            print(f"{snap_id:<6}{rel_path:<35}{ts:<20}{size_str:<10}{sha_prefix:<10}")
+
+        print("=" * 80 + "\n")
+
+    def clean(self, force: bool = False) -> bool:
+        """
+        Clear all snapshots and metadata with user confirmation.
+        
+        Args:
+            force: If True, bypass confirmation prompt.
+            
+        Returns:
+            True if cleaned, False if cancelled.
+        """
+        if not force:
+            print(f"\n[Warning] This will permanently remove all snapshots in:")
+            print(f"          {self.backup_engine.snapshots_dir}")
+            try:
+                confirm = input("Are you sure you want to proceed? (y/N): ").strip().lower()
+                if confirm not in ("y", "yes"):
+                    print("Clean cancelled.")
+                    return False
+            except (EOFError, KeyboardInterrupt):
+                print("\nClean cancelled.")
+                return False
+
+        self.backup_engine.clean()
+        print("\n[Success] Cleaned all snapshots and reset metadata.")
+        return True
