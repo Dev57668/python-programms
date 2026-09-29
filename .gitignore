@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CodeVault runtime data
+.lifejacket/
+.lifejacket.bak/
