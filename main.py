@@ -132,6 +132,28 @@ def handle_clean(args: argparse.Namespace, config: Config) -> None:
     engine.clean(force=args.yes)
 
 
+def handle_deleted(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'deleted' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    engine.print_deleted_files()
+
+
+def handle_restore_project(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'restore-project' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    success = engine.restore_project(
+        at_time=args.at,
+        dry_run=args.dry_run,
+        force=args.yes
+    )
+    if not success:
+        sys.exit(1)
+
+
 def main() -> None:
     """Main CLI command parser and dispatcher."""
     parser = argparse.ArgumentParser(
@@ -199,6 +221,17 @@ Examples:
     clean_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
     clean_parser.add_argument("-y", "--yes", action="store_true", help="Bypass confirmation prompt")
 
+    # Command: deleted
+    deleted_parser = subparsers.add_parser("deleted", help="Show previously tracked files that are currently missing")
+    deleted_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+
+    # Command: restore-project
+    restore_project_parser = subparsers.add_parser("restore-project", help="Restore the entire project to a specific point in time")
+    restore_project_parser.add_argument("directory", nargs="?", default=".", help="Project directory to restore")
+    restore_project_parser.add_argument("--at", type=str, required=True, help="Time to restore to (e.g. 10m, 2h, HH:MM)")
+    restore_project_parser.add_argument("--dry-run", action="store_true", help="Preview what would happen without making changes")
+    restore_project_parser.add_argument("-y", "--yes", action="store_true", help="Bypass confirmation prompt")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -222,6 +255,8 @@ Examples:
         "restore": handle_restore,
         "snapshots": handle_snapshots,
         "clean": handle_clean,
+        "deleted": handle_deleted,
+        "restore-project": handle_restore_project,
     }
 
     handler = commands.get(args.command)

@@ -709,3 +709,128 @@ class RecoveryEngine:
         self.backup_engine.clean()
         print("\n[Success] Cleaned all snapshots and reset metadata.")
         return True
+
+    def print_deleted_files(self) -> None:
+        """Print files that were previously tracked but are currently missing."""
+        deletions = self.db.get_deletions()
+        print("\n" + "=" * 70)
+        print("  Code Lifejacket - Deleted Files")
+        print("=" * 70)
+        
+        if not deletions:
+            print("No deleted files found.")
+            print("=" * 70 + "\n")
+            return
+            
+        print(f"{'File':<30}{'Deleted At':<22}{'Snapshots':<10}{'Latest Snapshot':<22}")
+        print("-" * 84)
+        for d in deletions:
+            rel_path = d["relative_path"]
+            del_at = d["timestamp"] or "Unknown"
+            snaps = self.db.get_snapshots_for_file(rel_path)
+            num_snaps = len(snaps)
+            latest_snap = snaps[-1].get("timestamp", "N/A") if snaps else "N/A"
+            print(f"{rel_path:<30}{del_at:<22}{num_snaps:<10}{latest_snap:<22}")
+        print("=" * 84)
+        print("To restore a deleted file: python main.py restore <deleted-file> --id <ID>\n")
+
+    def restore_project(self, at_time: str, dry_run: bool = False, force: bool = False) -> bool:
+        target_dt = parse_time_string(at_time)
+        if not target_dt:
+            print(f"\n[Error] Invalid time format: '{at_time}'.")
+            print("        Use ISO datetime, HH:MM, or relative like 10m, 2h, 1d.")
+            return False
+
+        all_files = self.db.get_tracked_files()
+        plan_restore = []
+        plan_skip_not_exist = []
+        plan_overwrite = []
+        plan_missing_now = []
+        plan_not_in_history = []
+        
+        from datetime import datetime
+        for rel_path, meta in all_files.items():
+            abs_path = self.project_dir / rel_path
+            snaps = self.db.get_snapshots_for_file(rel_path)
+            best_s = None
+            for s in sorted(snaps, key=lambda x: x.get("timestamp", "")):
+                try:
+                    s_dt = datetime.strptime(s.get("timestamp", ""), "%Y-%m-%d %H:%M:%S")
+                    if s_dt <= target_dt:
+                        best_s = s
+                except ValueError:
+                    pass
+            
+            if best_s:
+                plan_restore.append({
+                    "relative_path": rel_path,
+                    "snapshot": best_s,
+                    "abs_path": abs_path,
+                    "exists_now": abs_path.exists()
+                })
+                if abs_path.exists():
+                    plan_overwrite.append(rel_path)
+                else:
+                    plan_missing_now.append(rel_path)
+            else:
+                plan_skip_not_exist.append(rel_path)
+                if abs_path.exists():
+                    plan_not_in_history.append(rel_path)
+
+        if dry_run:
+            print("\n" + "=" * 70)
+            print("  Code Lifejacket - Project Restore Preview (DRY RUN)")
+            print("=" * 70)
+            print(f"Target Time: {target_dt}")
+            print(f"Files to restore: {len(plan_restore)}")
+            print(f"Files to skip (did not exist then): {len(plan_skip_not_exist)}")
+            print(f"Files that would be overwritten: {len(plan_overwrite)}")
+            print(f"Files that existed then but are missing now: {len(plan_missing_now)}")
+            print(f"Files currently present not part of historical state: {len(plan_not_in_history)}")
+            return True
+
+        if not force:
+            print("\n" + "=" * 70)
+            print("  Code Lifejacket - Project Restore Plan")
+            print("=" * 70)
+            print(f"Target Time: {target_dt}")
+            print(f"Files to restore: {len(plan_restore)}")
+            print(f"Files to skip (did not exist then): {len(plan_skip_not_exist)}")
+            print(f"Files that would be overwritten: {len(plan_overwrite)}")
+            print(f"Files that existed then but are missing now: {len(plan_missing_now)}")
+            print(f"Files currently present not part of historical state: {len(plan_not_in_history)}")
+            print("-" * 70)
+            try:
+                confirm = input("Proceed with project restoration? (y/N): ").strip().lower()
+                if confirm not in ("y", "yes"):
+                    print("Restoration cancelled.")
+                    return False
+            except (EOFError, KeyboardInterrupt):
+                print("\nRestoration cancelled.")
+                return False
+
+        # Verify ALL hashes
+        for item in plan_restore:
+            s = item["snapshot"]
+            source_abs_path = self.project_dir / s["snapshot_path"]
+            if not source_abs_path.is_file():
+                print(f"\n[Error] Snapshot file missing on disk: {source_abs_path}")
+                return False
+            actual_hash = compute_file_hash(source_abs_path)
+            expected_hash = s.get("hash")
+            if actual_hash != expected_hash:
+                print(f"\n[Error] Snapshot integrity verification failed for {item['relative_path']}!")
+                print("        The snapshot file is corrupted. Restoration aborted.")
+                return False
+
+        # Restore
+        for item in plan_restore:
+            self.restore_file(
+                target_file=item["abs_path"],
+                snapshot_id=item["snapshot"]["id"],
+                force=True,
+                interactive=False
+            )
+        
+        print("\n[Success] Project restore completed.")
+        return True
