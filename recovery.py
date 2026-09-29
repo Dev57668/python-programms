@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from backup import BackupEngine
 from config import Config
 from database import Database
-from utils import format_size, get_relative_path
+from utils import format_size, get_relative_path, parse_time_string, compute_file_hash, atomic_copy
 
 logger = logging.getLogger("lifejacket")
 
@@ -216,7 +216,9 @@ class RecoveryEngine:
         target_file: Path,
         snapshot_id: Optional[int] = None,
         force: bool = False,
-        interactive: bool = True
+        interactive: bool = True,
+        out_path: Optional[Path] = None,
+        at_time: Optional[str] = None
     ) -> bool:
         """
         Restore a file from a selected snapshot.
@@ -227,16 +229,20 @@ class RecoveryEngine:
             snapshot_id: Specific snapshot ID to restore (optional).
             force: If True, bypass confirmation prompts (e.g. CLI --yes flag).
             interactive: Whether to prompt for input if needed.
+            out_path: If provided, restores to this path without touching original.
+            at_time: If provided, finds the latest snapshot at or before this time.
             
         Returns:
             True if restoration was successful, False otherwise.
         """
-        resolved_dest = Path(target_file).resolve()
-        relative_path = get_relative_path(resolved_dest, self.project_dir)
+        resolved_src = Path(target_file).resolve()
+        relative_path = get_relative_path(resolved_src, self.project_dir)
         snapshots = self.db.get_snapshots_for_file(relative_path)
+        dest_file = out_path if out_path else resolved_src
 
         if not snapshots:
-            print(f"\n[Error] No snapshots found for '{relative_path}'. Cannot restore.")
+            print(f"\n[Error] No snapshots found for '{relative_path}'.")
+            print(f"        Did you mean another file in {resolved_src.parent.name}/?")
             return False
 
         # Select which snapshot to restore
@@ -249,10 +255,34 @@ class RecoveryEngine:
                     break
             if not chosen_snapshot:
                 print(f"\n[Error] Snapshot ID #{snapshot_id} not found for '{relative_path}'.")
+                print("        Use 'python main.py history <file>' to see available IDs.")
+                return False
+        elif at_time is not None:
+            try:
+                target_dt = parse_time_string(at_time)
+            except ValueError:
+                print(f"\n[Error] Invalid time format: '{at_time}'.")
+                print("        Use ISO datetime, HH:MM, or relative like 10m, 2h, 1d.")
+                return False
+            
+            from datetime import datetime
+            best_s = None
+            for s in sorted(snapshots, key=lambda x: x.get("timestamp", "")):
+                try:
+                    s_dt = datetime.strptime(s.get("timestamp", ""), "%Y-%m-%d %H:%M:%S")
+                    if s_dt <= target_dt:
+                        best_s = s
+                except ValueError:
+                    pass
+            if best_s:
+                chosen_snapshot = best_s
+            else:
+                print(f"\n[Error] No snapshots found at or before {at_time} for '{relative_path}'.")
+                print("        Use 'python main.py history <file>' to see available snapshots.")
                 return False
         else:
             if interactive:
-                chosen_snapshot = self.select_snapshot_interactively(resolved_dest, snapshots)
+                chosen_snapshot = self.select_snapshot_interactively(resolved_src, snapshots)
                 if not chosen_snapshot:
                     return False
             else:
@@ -270,13 +300,13 @@ class RecoveryEngine:
         # Confirmation prompt check before restoring
         if not force:
             if interactive:
-                confirmed = self.confirm_restoration(resolved_dest, chosen_snapshot, relative_path)
+                confirmed = self.confirm_restoration(dest_file, chosen_snapshot, relative_path)
                 if not confirmed:
                     return False
             else:
                 # Non-interactive mode without force: protect against overwrite
-                if resolved_dest.exists():
-                    print(f"\n[Safety Alert] File already exists at: {resolved_dest}")
+                if dest_file.exists():
+                    print(f"\n[Safety Alert] File already exists at: {dest_file}")
                     print("Aborting: File exists and --yes was not provided.")
                     return False
                 else:
@@ -285,19 +315,35 @@ class RecoveryEngine:
 
         # Perform the safe copy
         try:
-            resolved_dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_abs_path, resolved_dest)
+            # Snapshot Integrity Verification
+            actual_hash = compute_file_hash(source_abs_path)
+            expected_hash = chosen_snapshot.get("hash")
+            if actual_hash != expected_hash:
+                print(f"\n[Error] Snapshot integrity verification failed!")
+                print(f"        Expected SHA-256: {expected_hash}")
+                print(f"        Actual SHA-256:   {actual_hash}")
+                print("        The snapshot file is corrupted or modified. Restoration aborted.")
+                return False
+
+            if not out_path and dest_file.exists():
+                current_hash = compute_file_hash(dest_file)
+                if current_hash and current_hash != chosen_snapshot.get("hash"):
+                    self.backup_engine.create_snapshot(dest_file, event_type="pre_restore")
+
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            atomic_copy(source_abs_path, dest_file)
             
-            # Update tracked file status in db
-            tracked = self.db.get_tracked_files()
-            if relative_path in tracked:
-                tracked[relative_path]["status"] = "active"
-                tracked[relative_path]["last_hash"] = chosen_snapshot.get("hash")
-                self.db._save()
+            if not out_path:
+                # Update tracked file status in db
+                tracked = self.db.get_tracked_files()
+                if relative_path in tracked:
+                    tracked[relative_path]["status"] = "active"
+                    tracked[relative_path]["last_hash"] = chosen_snapshot.get("hash")
+                    self.db._save()
 
             print(f"\n[Success] Restored '{relative_path}' from Snapshot #{chosen_snapshot['id']}")
             print(f"          Created at: {chosen_snapshot.get('timestamp')}")
-            print(f"          Restored to: {resolved_dest}")
+            print(f"          Restored to: {dest_file}")
             return True
         except (OSError, PermissionError) as e:
             print(f"\n[Error] Failed to restore file: {e}")
@@ -447,8 +493,18 @@ class RecoveryEngine:
 
             # Restore the file
             try:
+                # Snapshot Integrity Verification
+                actual_hash = compute_file_hash(source_abs_path)
+                expected_hash = chosen_snapshot.get("hash")
+                if actual_hash != expected_hash:
+                    print(f"\n[Error] Snapshot integrity verification failed!")
+                    print(f"        Expected SHA-256: {expected_hash}")
+                    print(f"        Actual SHA-256:   {actual_hash}")
+                    print("        The snapshot file is corrupted or modified. Restoration aborted.")
+                    return False
+
                 resolved_dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_abs_path, resolved_dest)
+                atomic_copy(source_abs_path, resolved_dest)
 
                 # Update database tracked file status
                 tracked = self.db.get_tracked_files()

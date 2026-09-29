@@ -2,7 +2,8 @@ import hashlib
 import logging
 import os
 import shutil
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import tempfile
@@ -119,6 +120,38 @@ def format_timestamp_filename(dt: Optional[datetime] = None) -> str:
     if dt is None:
         dt = datetime.now()
     return dt.strftime("%Y%m%d_%H%M%S_%f")
+
+
+def parse_time_string(time_str: str) -> datetime:
+    """
+    Parse a time string into a datetime object.
+    Supports:
+    - ISO datetime (e.g. 2026-09-29T10:00:00)
+    - HH:MM (today)
+    - Relative time (10m, 2h, 1d)
+    """
+    now = datetime.now()
+    
+    # Relative time
+    m = re.match(r"^(\d+)([mhd])$", time_str.strip().lower())
+    if m:
+        val = int(m.group(1))
+        unit = m.group(2)
+        if unit == "m":
+            return now - timedelta(minutes=val)
+        elif unit == "h":
+            return now - timedelta(hours=val)
+        elif unit == "d":
+            return now - timedelta(days=val)
+
+    # HH:MM today
+    m = re.match(r"^(\d{1,2}):(\d{2})$", time_str.strip())
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2))
+        return now.replace(hour=h, minute=mn, second=0, microsecond=0)
+
+    # Fallback to standard ISO parsing
+    return datetime.fromisoformat(time_str)
 
 
 def format_size(size_bytes: int) -> str:

@@ -88,11 +88,16 @@ def handle_restore(args: argparse.Namespace, config: Config) -> None:
     target_file = Path(args.file).resolve()
     project_root = find_project_root(target_file, config)
     engine = RecoveryEngine(project_root, config)
+    
+    out_path = Path(args.to).resolve() if args.to else None
+    
     success = engine.restore_file(
         target_file=target_file,
         snapshot_id=args.id,
         force=args.yes,
-        interactive=not args.yes
+        interactive=not args.yes,
+        out_path=out_path,
+        at_time=args.at
     )
     if not success:
         sys.exit(1)
@@ -181,6 +186,8 @@ Examples:
     restore_parser = subparsers.add_parser("restore", help="Restore a file from a snapshot")
     restore_parser.add_argument("file", help="Path to source file to restore")
     restore_parser.add_argument("--id", type=int, default=None, help="Snapshot ID to restore (optional)")
+    restore_parser.add_argument("--to", type=str, default=None, help="Output path (never touches the original)")
+    restore_parser.add_argument("--at", type=str, default=None, help="Time to restore to (e.g. 10m, 2h, HH:MM)")
     restore_parser.add_argument("-y", "--yes", action="store_true", help="Bypass overwrite confirmation prompt")
 
     # Command: snapshots
