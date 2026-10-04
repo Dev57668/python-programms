@@ -9,13 +9,13 @@ from backup import BackupEngine
 from watcher import LifejacketEventHandler, LifejacketWatcher
 
 @pytest.fixture
-def test_env():
-    test_dir = Path(tempfile.mkdtemp())
+def test_env(tmp_path):
+    test_dir = tmp_path / "project"
+    test_dir.mkdir()
     cfg = Config()
     cfg.debounce_time = 0.0
     engine = BackupEngine(test_dir, cfg)
     yield test_dir, cfg, engine
-    shutil.rmtree(test_dir, ignore_errors=True)
 
 class DummyEvent:
     def __init__(self, src_path, dest_path=None, is_directory=False):

@@ -11,15 +11,15 @@ from backup import BackupEngine
 from utils import format_timestamp
 
 @pytest.fixture
-def test_env():
-    test_dir = Path(tempfile.mkdtemp())
+def test_env(tmp_path):
+    test_dir = tmp_path / 'project'
+    test_dir.mkdir()
     cfg = Config()
     # Speed up tests
     cfg.backup_debounce_seconds = 0
     engine = BackupEngine(test_dir, cfg)
     recovery = RecoveryEngine(test_dir, cfg)
     yield test_dir, engine, recovery
-    shutil.rmtree(test_dir, ignore_errors=True)
 
 def test_deleted_command(test_env, capsys):
     test_dir, engine, recovery = test_env

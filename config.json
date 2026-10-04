@@ -1,27 +1,28 @@
 {
-  "monitored_extensions": [
-    ".py",
-    ".java",
-    ".cpp",
-    ".c",
-    ".js",
-    ".ts",
-    ".go",
-    ".rs"
-  ],
-  "ignored_directories": [
-    ".git",
-    "node_modules",
-    "venv",
-    ".venv",
-    "env",
-    "__pycache__",
-    ".lifejacket",
-    ".idea",
-    ".vscode"
-  ],
-  "max_snapshots": 50,
-  "debounce_time": 1.0,
-  "snapshot_directory_name": ".lifejacket",
-  "log_level": "INFO"
+    "monitored_extensions": [
+        ".go",
+        ".ts",
+        ".rs",
+        ".cpp",
+        ".java",
+        ".py",
+        ".c",
+        ".js"
+    ],
+    "ignored_directories": [
+        ".venv",
+        ".lifejacket",
+        "env",
+        "__pycache__",
+        ".git",
+        "venv",
+        ".vscode",
+        ".idea",
+        "node_modules"
+    ],
+    "max_snapshots": 10,
+    "max_age_days": 30,
+    "debounce_time": 1.0,
+    "snapshot_directory_name": ".lifejacket",
+    "log_level": "INFO"
 }

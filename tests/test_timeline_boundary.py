@@ -1,3 +1,5 @@
+import sys
+import pathlib
 import pytest
 from pathlib import Path
 import subprocess
@@ -30,7 +32,7 @@ def test_timeline_boundary_filtering(tmp_path):
     main_script = str(root / "main.py")
     
     # Test timeline specific file src/app.py
-    res = subprocess.run(["python3", main_script, "timeline", "src/app.py"], cwd=str(project_dir), capture_output=True, text=True)
+    res = subprocess.run([sys.executable, main_script, "timeline", "src/app.py"], cwd=str(project_dir), capture_output=True, text=True)
     
     # Should contain src/app.py but NOT src/application.py
     assert "src/app.py" in res.stdout

@@ -11,14 +11,14 @@ from recovery import RecoveryEngine
 from backup import BackupEngine
 
 @pytest.fixture
-def test_env():
-    test_dir = Path(tempfile.mkdtemp())
+def test_env(tmp_path):
+    test_dir = tmp_path / 'project'
+    test_dir.mkdir()
     cfg = Config()
     cfg.debounce_time = 0
     engine = BackupEngine(test_dir, cfg)
     recovery = RecoveryEngine(test_dir, cfg)
     yield test_dir, cfg, engine, recovery
-    shutil.rmtree(test_dir, ignore_errors=True)
 
 def test_pin_unpin_duplicate(test_env, capsys):
     test_dir, cfg, engine, recovery = test_env

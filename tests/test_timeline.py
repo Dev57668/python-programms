@@ -1,3 +1,5 @@
+import sys
+import pathlib
 import pytest
 from pathlib import Path
 import subprocess
@@ -33,7 +35,7 @@ def test_timeline_output(tmp_path):
     
     # Test timeline project
     
-    res_proj = subprocess.run(["python3", "/Users/bhaveshlakhmani/Documents/antigravity/pyhtonproject/python-programms/main.py", "timeline", "."], cwd=str(project_dir), capture_output=True, text=True)
+    res_proj = subprocess.run([sys.executable, str(pathlib.Path(__file__).parent.parent / "main.py"), "timeline", "."], cwd=str(project_dir), capture_output=True, text=True)
     assert "Timeline" in res_proj.stdout
     assert "CREATED" in res_proj.stdout
     assert "RENAMED" in res_proj.stdout
@@ -42,7 +44,7 @@ def test_timeline_output(tmp_path):
     assert "DELETED" in res_proj.stdout
     
     # Test timeline specific file
-    res_file = subprocess.run(["python3", "/Users/bhaveshlakhmani/Documents/antigravity/pyhtonproject/python-programms/main.py", "timeline", "b.py"], cwd=str(project_dir), capture_output=True, text=True)
+    res_file = subprocess.run([sys.executable, str(pathlib.Path(__file__).parent.parent / "main.py"), "timeline", "b.py"], cwd=str(project_dir), capture_output=True, text=True)
     assert "Timeline for b.py" in res_file.stdout
     assert "a.py -> b.py" in res_file.stdout # Should include rename
     assert "DELETED" in res_file.stdout
