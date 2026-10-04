@@ -29,7 +29,7 @@ def compute_file_hash(file_path: Path) -> Optional[str]:
                 sha256.update(chunk)
         return sha256.hexdigest()
     except (OSError, PermissionError) as e:
-        logging.getLogger("lifejacket").debug(f"Unable to read file for hashing {file_path}: {e}")
+        logging.getLogger("codevault").debug(f"Unable to read file for hashing {file_path}: {e}")
         return None
 
 def atomic_write(file_path: Path, content: bytes) -> None:
@@ -178,7 +178,7 @@ def get_relative_path(file_path: Path, base_dir: Path) -> str:
 
 def setup_logger(log_file: Optional[Path] = None, log_level: str = "INFO") -> logging.Logger:
     """
-    Configure and return the root logger for Code Lifejacket.
+    Configure and return the root logger for CodeVault.
     
     Args:
         log_file: Optional file path to write log entries to.
@@ -187,7 +187,7 @@ def setup_logger(log_file: Optional[Path] = None, log_level: str = "INFO") -> lo
     Returns:
         Configured Logger instance.
     """
-    logger = logging.getLogger("lifejacket")
+    logger = logging.getLogger("codevault")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
     # Avoid duplicate handlers if already configured

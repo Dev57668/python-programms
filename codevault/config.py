@@ -1,5 +1,5 @@
 """
-Configuration Module for Code Lifejacket.
+Configuration Module for CodeVault.
 Handles loading and validating user configuration from config.json.
 Provides helper methods for path filtering and file extension checking.
 """
@@ -12,7 +12,7 @@ from typing import List, Optional, Set
 
 
 class Config:
-    """Manages application settings for Code Lifejacket."""
+    """Manages application settings for CodeVault."""
 
     # Default settings if config.json is missing or incomplete
     DEFAULT_MONITORED_EXTENSIONS = [
@@ -113,7 +113,7 @@ class Config:
         except ValueError:
             rel_path = target_path
 
-        # Always ignore the lifejacket directory
+        # Always ignore the codevault directory
         if self.snapshot_directory_name in rel_path.parts:
             return True
 
@@ -164,7 +164,7 @@ class Config:
     def show(self) -> None:
         """Display the effective configuration."""
         print("\n" + "=" * 60)
-        print("  Code Lifejacket - Effective Configuration")
+        print("  CodeVault - Effective Configuration")
         print("=" * 60)
         
         def format_val(current, default):

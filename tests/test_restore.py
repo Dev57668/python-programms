@@ -168,7 +168,7 @@ class TestFileRestore(unittest.TestCase):
 
         output = buf.getvalue()
         self.assertTrue(success)
-        self.assertIn("CODE LIFEJACKET - RECOVERY", output)
+        self.assertIn("CODEVAULT - RECOVERY", output)
         self.assertIn("Status:     ACTIVE", output)
         self.assertIn("Selection | ID", output)
         self.assertIn("Timestamp", output)

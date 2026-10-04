@@ -1,5 +1,5 @@
 """
-Recovery Engine for Code Lifejacket.
+Recovery Engine for CodeVault.
 Handles inspecting snapshot history, restoring deleted or overwritten files,
 presenting repository status, and managing snapshot cleanup safely.
 """
@@ -16,7 +16,7 @@ from codevault.config import Config
 from codevault.database import Database
 from codevault.utils import format_size, get_relative_path, parse_time_string, compute_file_hash, atomic_copy
 
-logger = logging.getLogger("lifejacket")
+logger = logging.getLogger("codevault")
 
 
 class RecoveryEngine:
@@ -56,7 +56,7 @@ class RecoveryEngine:
         snapshots = self.get_file_history(resolved_file)
 
         print("\n" + "=" * 70)
-        print(f"  Code Lifejacket - File History")
+        print(f"  CodeVault - File History")
         print("=" * 70)
         print(f"File:       {relative_path}")
 
@@ -64,7 +64,7 @@ class RecoveryEngine:
         if resolved_file.exists():
             print(f"Status:     ACTIVE (exists on disk)")
         else:
-            print(f"Status:     DELETED / MISSING (safe in Lifejacket backups)")
+            print(f"Status:     DELETED / MISSING (safe in CodeVault backups)")
 
         if not snapshots:
             print("\nNo snapshots found for this file.")
@@ -107,13 +107,13 @@ class RecoveryEngine:
         relative_path = get_relative_path(resolved_file, self.project_dir)
 
         print("\n" + "=" * 76)
-        print("  Code Lifejacket - Interactive Recovery Menu")
+        print("  CodeVault - Interactive Recovery Menu")
         print("=" * 76)
         print(f"File:       {relative_path}")
         if resolved_file.exists():
             print(f"Status:     ACTIVE (exists on disk)")
         else:
-            print(f"Status:     DELETED / MISSING (safe in Lifejacket backups)")
+            print(f"Status:     DELETED / MISSING (safe in CodeVault backups)")
         print(f"Location:   {resolved_file}")
         print("\nAvailable Snapshots:")
         print("-" * 76)
@@ -356,7 +356,7 @@ class RecoveryEngine:
         Interactive recovery command wizard for python main.py recover <file>.
         
         Requirements:
-        1. Display 'CODE LIFEJACKET - RECOVERY'
+        1. Display 'CODEVAULT - RECOVERY'
         2. Show file path and current status: ACTIVE / DELETED / MISSING
         3. List every available snapshot in a numbered table:
            Selection | ID | Timestamp | Size | Event | SHA-256
@@ -375,7 +375,7 @@ class RecoveryEngine:
             snapshots = self.db.get_snapshots_for_file(relative_path)
 
             print("\n" + "=" * 76)
-            print("  CODE LIFEJACKET - RECOVERY")
+            print("  CODEVAULT - RECOVERY")
             print("=" * 76)
             print(f"File Path:  {relative_path}")
             print(f"Full Path:  {resolved_dest}")
@@ -612,7 +612,7 @@ class RecoveryEngine:
 
     def print_status(self) -> None:
         """
-        Display the professional Code Lifejacket status dashboard.
+        Display the professional CodeVault status dashboard.
         Clean, readable format compatible with Windows Git Bash.
         """
         data = self.get_status_data()
@@ -630,7 +630,7 @@ class RecoveryEngine:
             prot_str = prot_str.replace("●", "[*]").replace("○", "[ ]")
 
         print("\n" + "=" * 60)
-        print("              CODE LIFEJACKET - STATUS")
+        print("              CODEVAULT - STATUS")
         print("=" * 60)
         
         print("\nProtection:")
@@ -669,7 +669,7 @@ class RecoveryEngine:
         print("\n" + "-" * 60)
         print("STORAGE")
         print("-" * 60)
-        print(f"\nLifejacket Directory: {data['lifejacket_dir']}")
+        print(f"\nCodeVault Directory: {data['lifejacket_dir']}")
         print(f"Storage Used: {data['total_backup_size_formatted']}")
         print(f"Maximum Snapshots: {data['max_snapshots']}")
         print("-" * 60 + "\n")
@@ -679,7 +679,7 @@ class RecoveryEngine:
         snapshots = self.db.get_all_snapshots()
 
         print("\n" + "=" * 80)
-        print("  Code Lifejacket - All Stored Snapshots")
+        print("  CodeVault - All Stored Snapshots")
         print("=" * 80)
 
         if not snapshots:
@@ -731,7 +731,7 @@ class RecoveryEngine:
         """Print files that were previously tracked but are currently missing."""
         deletions = self.db.get_deletions()
         print("\n" + "=" * 70)
-        print("  Code Lifejacket - Deleted Files")
+        print("  CodeVault - Deleted Files")
         print("=" * 70)
         
         if not deletions:
@@ -796,7 +796,7 @@ class RecoveryEngine:
 
         if dry_run:
             print("\n" + "=" * 70)
-            print("  Code Lifejacket - Project Restore Preview (DRY RUN)")
+            print("  CodeVault - Project Restore Preview (DRY RUN)")
             print("=" * 70)
             print(f"Target Time: {target_dt}")
             print(f"Files to restore: {len(plan_restore)}")
@@ -808,7 +808,7 @@ class RecoveryEngine:
 
         if not force:
             print("\n" + "=" * 70)
-            print("  Code Lifejacket - Project Restore Plan")
+            print("  CodeVault - Project Restore Plan")
             print("=" * 70)
             print(f"Target Time: {target_dt}")
             print(f"Files to restore: {len(plan_restore)}")
@@ -961,7 +961,7 @@ class RecoveryEngine:
 
         if dry_run:
             print("\n" + "=" * 60)
-            print("  Code Lifejacket - Retention Cleanup (DRY RUN)")
+            print("  CodeVault - Retention Cleanup (DRY RUN)")
             print("=" * 60)
             print(f"Snapshots before:   {snaps_before}")
             print(f"Removable:          {len(removable_ids)}")
@@ -974,7 +974,7 @@ class RecoveryEngine:
             return
 
         print("\n" + "=" * 60)
-        print("  Code Lifejacket - Retention Cleanup")
+        print("  CodeVault - Retention Cleanup")
         print("=" * 60)
         print(f"Snapshots before:   {snaps_before}")
         print(f"Removable:          {len(removable_ids)}")
@@ -1086,9 +1086,9 @@ class RecoveryEngine:
                         
         print("\n" + "=" * 70)
         if rel_path == "." or rel_path == "":
-            print(f"  Code Lifejacket - Project Timeline")
+            print(f"  CodeVault - Project Timeline")
         else:
-            print(f"  Code Lifejacket - Timeline for {rel_path}")
+            print(f"  CodeVault - Timeline for {rel_path}")
         print("=" * 70)
         
         if not filtered:

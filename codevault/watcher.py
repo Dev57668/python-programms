@@ -1,5 +1,5 @@
 """
-File Watcher Module for Code Lifejacket.
+File Watcher Module for CodeVault.
 Leverages watchdog to monitor filesystem events in real-time,
 applies debouncing to suppress duplicate editor-save bursts,
 and guarantees watcher resilience through comprehensive exception shielding.
@@ -18,10 +18,10 @@ from watchdog.observers import Observer
 from codevault.backup import BackupEngine
 from codevault.config import Config
 
-logger = logging.getLogger("lifejacket")
+logger = logging.getLogger("codevault")
 
 
-class LifejacketEventHandler(FileSystemEventHandler):
+class CodeVaultEventHandler(FileSystemEventHandler):
     """
     Handles filesystem events (modified, created, deleted) with debouncing
     and exception shielding so the watcher process never crashes.
@@ -166,14 +166,14 @@ class LifejacketEventHandler(FileSystemEventHandler):
             logger.error(f"[Watcher Exception Shield] Error handling move for '{event.src_path}': {e}")
 
 
-class LifejacketWatcher:
+class CodeVaultWatcher:
     """Manages the watchdog observer lifecycle."""
 
     def __init__(self, project_dir: Path, config: Optional[Config] = None):
         self.project_dir = Path(project_dir).resolve()
         self.config = config or Config()
         self.backup_engine = BackupEngine(self.project_dir, self.config)
-        self.event_handler = LifejacketEventHandler(self.backup_engine, self.config)
+        self.event_handler = CodeVaultEventHandler(self.backup_engine, self.config)
         self.observer = Observer()
         self._running = False
 
@@ -208,7 +208,7 @@ class LifejacketWatcher:
             return
 
         print("\n" + "=" * 70)
-        print("  Code Lifejacket - Real-Time Accidental Delete Recovery System")
+        print("  CodeVault - Real-Time Accidental Delete Recovery System")
         print("=" * 70)
         print(f"Monitoring:          {self.project_dir}")
         print(f"File Extensions:     {', '.join(sorted(self.config.monitored_extensions))}")
@@ -221,7 +221,7 @@ class LifejacketWatcher:
         initial_count = self.scan_and_snapshot_existing()
         print(f"Initial scan complete. {initial_count} new file snapshot(s) cataloged.")
         print("-" * 70)
-        print("Lifejacket is ACTIVE. Press Ctrl+C at any time to stop.\n")
+        print("CodeVault is ACTIVE. Press Ctrl+C at any time to stop.\n")
 
         self.observer.schedule(self.event_handler, str(self.project_dir), recursive=True)
         self.observer.start()
@@ -231,7 +231,7 @@ class LifejacketWatcher:
             while self._running and self.observer.is_alive():
                 time.sleep(0.5)
         except KeyboardInterrupt:
-            print("\nShutting down Code Lifejacket watcher...")
+            print("\nShutting down CodeVault watcher...")
         finally:
             self.stop()
 
@@ -241,4 +241,4 @@ class LifejacketWatcher:
         if self.observer.is_alive():
             self.observer.stop()
             self.observer.join(timeout=2.0)
-        print("Code Lifejacket watcher stopped.")
+        print("CodeVault watcher stopped.")

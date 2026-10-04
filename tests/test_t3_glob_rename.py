@@ -6,7 +6,7 @@ from collections import namedtuple
 
 from codevault.config import Config
 from codevault.backup import BackupEngine
-from codevault.watcher import LifejacketEventHandler, LifejacketWatcher
+from codevault.watcher import CodeVaultEventHandler, CodeVaultWatcher
 
 @pytest.fixture
 def test_env(tmp_path):
@@ -50,7 +50,7 @@ def test_config_glob_ignore(test_env):
 
 def test_rename_preserves_history(test_env):
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     src = test_dir / "old.py"
@@ -79,7 +79,7 @@ def test_rename_preserves_history(test_env):
 
 def test_tracked_file_move(test_env):
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     (test_dir / "src").mkdir()
@@ -101,7 +101,7 @@ def test_tracked_file_move(test_env):
 
 def test_move_into_ignored_directory(test_env):
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     cfg.ignored_directories = {"node_modules"}
     
@@ -125,7 +125,7 @@ def test_move_into_ignored_directory(test_env):
 
 def test_move_out_of_project(test_env):
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     src = test_dir / "app.py"
@@ -142,7 +142,7 @@ def test_move_out_of_project(test_env):
 
 def test_duplicate_move_events(test_env):
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     src = test_dir / "dup.py"

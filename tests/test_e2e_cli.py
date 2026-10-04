@@ -1,5 +1,5 @@
 """
-End-to-End CLI tests for Code Lifejacket.
+End-to-End CLI tests for CodeVault.
 Spawns subprocesses to verify CLI commands work exactly as expected from the shell.
 """
 
@@ -42,7 +42,7 @@ class TestCLIEndToEnd(unittest.TestCase):
         """Verify python main.py status works on project dir."""
         result = self._run_cli("status", str(self.test_dir))
         self.assertEqual(result.returncode, 0)
-        self.assertIn("CODE LIFEJACKET - STATUS", result.stdout)
+        self.assertIn("CODEVAULT - STATUS", result.stdout)
 
     def test_full_recovery_flow(self):
         """Simulate initial backup, modification, accidental deletion, and restore."""
@@ -121,7 +121,7 @@ class TestCLIEndToEnd(unittest.TestCase):
         )
 
         self.assertEqual(proc.returncode, 0)
-        self.assertIn("CODE LIFEJACKET - RECOVERY", proc.stdout)
+        self.assertIn("CODEVAULT - RECOVERY", proc.stdout)
         self.assertIn("Status:     DELETED / MISSING", proc.stdout)
         self.assertIn("Selection", proc.stdout)
         self.assertIn("Proceed with restoration? (y/N):", proc.stdout)

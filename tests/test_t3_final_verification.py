@@ -5,7 +5,7 @@ from pathlib import Path
 
 from codevault.config import Config
 from codevault.backup import BackupEngine
-from codevault.watcher import LifejacketWatcher
+from codevault.watcher import CodeVaultWatcher
 
 @pytest.fixture
 def test_env(tmp_path):
@@ -26,7 +26,7 @@ class DummyEvent:
 def test_case_1_rename(test_env):
     """1. A tracked file renamed from src/a.py -> src/b.py retains all existing snapshot history."""
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     (test_dir / "src").mkdir()
@@ -46,7 +46,7 @@ def test_case_1_rename(test_env):
 def test_case_2_move(test_env):
     """2. A tracked file moved from src/a.py -> utils/a.py retains its history."""
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     (test_dir / "src").mkdir()
@@ -66,7 +66,7 @@ def test_case_2_move(test_env):
 def test_case_3_move_outside(test_env):
     """3. A tracked file moved outside the monitored project is recorded as deleted, while its previous snapshots remain recoverable."""
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     src = test_dir / "a.py"
@@ -86,7 +86,7 @@ def test_case_3_move_outside(test_env):
 def test_case_4_move_ignored(test_env):
     """4. A tracked file moved INTO an ignored directory does not cause a new snapshot and does not lose its historical snapshots."""
     test_dir, cfg, engine = test_env
-    watcher = LifejacketWatcher(test_dir, cfg)
+    watcher = CodeVaultWatcher(test_dir, cfg)
     handler = watcher.event_handler
     
     src = test_dir / "a.py"

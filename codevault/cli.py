@@ -1,5 +1,5 @@
 """
-Main CLI Entrypoint for Code Lifejacket — Accidental Delete Recovery System.
+Main CLI Entrypoint for CodeVault — Accidental Delete Recovery System.
 
 Supported commands:
   python main.py watch <directory>       Start real-time filesystem monitoring
@@ -27,7 +27,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from codevault.config import Config
 from codevault.recovery import RecoveryEngine
 from codevault.utils import setup_logger
-from codevault.watcher import LifejacketWatcher
+from codevault.watcher import CodeVaultWatcher
 
 
 def find_project_root(target_path: Path, config: Config) -> Path:
@@ -63,7 +63,7 @@ def handle_watch(args: argparse.Namespace, config: Config) -> None:
         print(f"[Error] '{args.directory}' is not a valid directory.")
         sys.exit(1)
 
-    watcher = LifejacketWatcher(target_dir, config)
+    watcher = CodeVaultWatcher(target_dir, config)
     watcher.start()
 
 
@@ -238,7 +238,7 @@ def main() -> None:
     """Main CLI command parser and dispatcher."""
     parser = argparse.ArgumentParser(
         prog="python main.py",
-        description="Code Lifejacket - Accidental Delete Recovery System for Programmers",
+        description="CodeVault - Accidental Delete Recovery System for Programmers",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

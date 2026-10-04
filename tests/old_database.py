@@ -1,5 +1,5 @@
 """
-Database Module for Code Lifejacket.
+Database Module for CodeVault.
 Stores metadata, file snapshot histories, content hashes, and deletion records
 in a thread-safe JSON file inside .lifejacket/metadata.json.
 """

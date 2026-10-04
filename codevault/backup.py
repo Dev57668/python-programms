@@ -1,5 +1,5 @@
 """
-Backup Engine for Code Lifejacket.
+Backup Engine for CodeVault.
 Creates timestamped shadow copies preserving relative folder hierarchy,
 performs duplicate prevention using SHA-256 hashing,
 enforces snapshot retention limits, and handles file deletions safely.
@@ -22,7 +22,7 @@ from codevault.utils import (
     get_relative_path,
 )
 
-logger = logging.getLogger("lifejacket")
+logger = logging.getLogger("codevault")
 
 
 class BackupEngine:
@@ -39,7 +39,7 @@ class BackupEngine:
         self.project_dir = Path(project_dir).resolve()
         self.config = config or Config()
 
-        # Lifejacket hidden storage directory
+        # CodeVault hidden storage directory
         self.lifejacket_dir = self.project_dir / self.config.snapshot_directory_name
         self.snapshots_dir = self.lifejacket_dir / "snapshots"
         self.db_path = self.lifejacket_dir / "metadata.json"
@@ -130,7 +130,7 @@ class BackupEngine:
         )
 
         logger.info(
-            f"[Lifejacket Snapshot #{record['id']}] Saved: {relative_path_str} ({format_size(file_size)}) [SHA: {current_hash[:8]}]"
+            f"[CodeVault Snapshot #{record['id']}] Saved: {relative_path_str} ({format_size(file_size)}) [SHA: {current_hash[:8]}]"
         )
 
         # 8. Enforce snapshot retention limits (prune oldest if exceeded)
@@ -196,7 +196,7 @@ class BackupEngine:
         
         success = self.db.handle_rename(old_rel, new_rel)
         if success:
-            logger.info(f"[Lifejacket] Tracked file renamed: '{old_rel}' -> '{new_rel}'")
+            logger.info(f"[CodeVault] Tracked file renamed: '{old_rel}' -> '{new_rel}'")
         return success
 
     def purge(self) -> None:
