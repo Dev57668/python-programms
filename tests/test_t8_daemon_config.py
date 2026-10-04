@@ -114,9 +114,9 @@ def test_daemon_stop_graceful(mock_is_running, mock_kill, daemon_env):
     daemon_env.stop()
     
     if os.name == 'nt':
-        mock_kill.assert_called_with(1234, signal.CTRL_BREAK_EVENT)
+        mock_kill.assert_any_call(1234, signal.CTRL_BREAK_EVENT)
     else:
-        mock_kill.assert_called_with(1234, signal.SIGTERM)
+        mock_kill.assert_any_call(1234, signal.SIGTERM)
         
     assert not daemon_env.pid_file.exists()
 

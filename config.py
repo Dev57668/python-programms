@@ -5,6 +5,8 @@ Provides helper methods for path filtering and file extension checking.
 """
 
 import json
+import os
+import fnmatch
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -148,10 +150,15 @@ class Config:
             "snapshot_directory_name": self.snapshot_directory_name,
             "log_level": self.log_level
         }
+        tmp_path = self.config_path.with_suffix(".json.tmp")
         try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
+            # Atomic replace (POSIX) or overwrite (Windows)
+            os.replace(tmp_path, self.config_path)
         except Exception as e:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
             print(f"[Error] Failed to save config to {self.config_path}: {e}")
 
     def show(self) -> None:

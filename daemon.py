@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -55,6 +56,28 @@ class DaemonManager:
         except OSError:
             return False
 
+    def _is_our_process(self, pid: int) -> bool:
+        """Verify the PID is actually running our python code."""
+        if not self._is_process_alive(pid):
+            return False
+            
+        try:
+            if os.name == 'nt':
+                output = subprocess.check_output(
+                    f'wmic process where processid={pid} get commandline',
+                    shell=True, text=True, stderr=subprocess.DEVNULL
+                )
+                return 'python' in output.lower() and 'main.py' in output.lower()
+            else:
+                output = subprocess.check_output(
+                    ['ps', '-p', str(pid), '-o', 'command='],
+                    text=True, stderr=subprocess.DEVNULL
+                )
+                return 'python' in output.lower() and 'main.py' in output.lower()
+        except Exception:
+            # Fallback if ps/wmic fail (e.g. not installed or restricted)
+            return True
+
     def _is_daemon_running(self) -> Tuple[bool, bool, Optional[int]]:
         """
         Check if the daemon is running.
@@ -68,10 +91,7 @@ class DaemonManager:
         if not pid:
             return False, True, None
             
-        if self._is_process_alive(pid):
-            # We assume it's our daemon if the PID file exists and process is alive.
-            # In a very strict environment we might check the command line,
-            # but PID file + process alive is generally sufficient.
+        if self._is_our_process(pid):
             return True, False, pid
             
         return False, True, pid
@@ -146,8 +166,26 @@ class DaemonManager:
             else:
                 os.kill(pid, signal.SIGTERM)
                 
+            # Wait gracefully for up to 5 seconds
+            for _ in range(25):
+                if not self._is_process_alive(pid):
+                    break
+                time.sleep(0.2)
+                
+            if self._is_process_alive(pid):
+                print(f"[Warning] Daemon {pid} did not exit within 5 seconds. Forcing termination.")
+                try:
+                    if os.name == 'nt':
+                        subprocess.run(['taskkill', '/F', '/PID', str(pid)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        os.kill(pid, signal.SIGKILL)
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            else:
+                print("[OK] Daemon stopped successfully.")
+                
             self._clear_state()
-            print("[OK] Daemon stopped successfully.")
         except ProcessLookupError:
             print(f"[Info] Process {pid} already exited. Cleaning up.")
             self._clear_state()
