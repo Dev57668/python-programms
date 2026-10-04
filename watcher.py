@@ -127,6 +127,44 @@ class LifejacketEventHandler(FileSystemEventHandler):
         except Exception as e:
             logger.error(f"[Watcher Exception Shield] Error handling deletion for '{event.src_path}': {e}")
 
+    def on_moved(self, event: FileSystemEvent) -> None:
+        """Triggered when a file or directory is moved/renamed."""
+        if event.is_directory:
+            return
+
+        src_path = Path(event.src_path)
+        dest_path = Path(event.dest_path)
+        
+        try:
+            # Cancel any pending backups for both src and dest
+            self._cancel_timer(str(src_path))
+            self._cancel_timer(str(dest_path))
+            
+            def is_monitored(path: Path) -> bool:
+                try:
+                    path.resolve().relative_to(self.backup_engine.project_dir)
+                    return self.config.is_monitored_file(path) and not self.config.is_ignored_path(path, self.backup_engine.project_dir)
+                except ValueError:
+                    return False
+            
+            src_monitored = is_monitored(src_path)
+            dest_monitored = is_monitored(dest_path)
+            
+            if src_monitored and dest_monitored:
+                # Rename within monitored project
+                self.backup_engine.handle_rename(src_path, dest_path)
+                # Create snapshot for the new file if content changed
+                self._schedule_backup(str(dest_path), "renamed")
+            elif src_monitored and not dest_monitored:
+                # Moved out of project or to ignored/unmonitored path
+                self.backup_engine.handle_deletion(src_path)
+            elif not src_monitored and dest_monitored:
+                # Moved into project from outside or ignored
+                self._schedule_backup(str(dest_path), "created")
+                
+        except Exception as e:
+            logger.error(f"[Watcher Exception Shield] Error handling move for '{event.src_path}': {e}")
+
 
 class LifejacketWatcher:
     """Manages the watchdog observer lifecycle."""

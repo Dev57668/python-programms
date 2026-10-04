@@ -94,7 +94,7 @@ class Config:
 
     def is_ignored_path(self, target_path: Path, base_dir: Optional[Path] = None) -> bool:
         """
-        Check if any part of the path falls within an ignored directory.
+        Check if any part of the path falls within an ignored directory or matches a glob pattern.
         
         Args:
             target_path: Path to inspect.
@@ -105,22 +105,35 @@ class Config:
         """
         try:
             if base_dir:
-                rel_parts = target_path.resolve().relative_to(base_dir.resolve()).parts
+                rel_path = target_path.resolve().relative_to(base_dir.resolve())
             else:
-                rel_parts = target_path.parts
+                rel_path = target_path
         except ValueError:
-            rel_parts = target_path.parts
+            rel_path = target_path
 
-        for part in rel_parts:
-            # Check against explicitly ignored directory names
-            if part in self.ignored_directories:
+        # Always ignore the lifejacket directory
+        if self.snapshot_directory_name in rel_path.parts:
+            return True
+
+        import fnmatch
+        rel_str = str(rel_path)
+
+        for pattern in self.ignored_directories:
+            p = pattern.replace("**/", "*").replace("/**", "*")
+            
+            # Entire path match
+            if fnmatch.fnmatch(rel_str, p):
                 return True
-            # Also ignore the configured snapshot directory name
-            if part == self.snapshot_directory_name:
-                return True
-            # Ignore hidden directories like .git, .cache, etc.
-            if part.startswith(".") and part not in (".", ".."):
-                if part in self.ignored_directories or part == self.snapshot_directory_name:
+                
+            # Any parent matches
+            for parent in rel_path.parents:
+                if str(parent) != ".":
+                    if fnmatch.fnmatch(str(parent), p):
+                        return True
+                        
+            # Single part matches (for simple directory names without slashes)
+            if "/" not in pattern and "\\" not in pattern:
+                if any(fnmatch.fnmatch(part, pattern) for part in rel_path.parts):
                     return True
-
+                    
         return False

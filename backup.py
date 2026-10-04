@@ -176,6 +176,29 @@ class BackupEngine:
             )
         return deletion_record
 
+    def handle_rename(self, old_file_path: Path, new_file_path: Path) -> bool:
+        """
+        Record when a tracked source file has been moved or renamed.
+        Preserves the history by updating the path in the database.
+        
+        Args:
+            old_file_path: The original path of the file.
+            new_file_path: The new path of the file.
+            
+        Returns:
+            True if the rename was processed, False otherwise.
+        """
+        old_resolved = Path(old_file_path).resolve()
+        new_resolved = Path(new_file_path).resolve()
+        
+        old_rel = get_relative_path(old_resolved, self.project_dir)
+        new_rel = get_relative_path(new_resolved, self.project_dir)
+        
+        success = self.db.handle_rename(old_rel, new_rel)
+        if success:
+            logger.info(f"[Lifejacket] Tracked file renamed: '{old_rel}' -> '{new_rel}'")
+        return success
+
     def purge(self) -> None:
         """Purge all stored snapshots and reset the database."""
         if self.snapshots_dir.exists():

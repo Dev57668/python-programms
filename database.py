@@ -259,6 +259,26 @@ class Database:
                 "last_snapshot_path": last_snap["snapshot_path"] if last_snap else None
             }
 
+    def handle_rename(self, old_relative_path: str, new_relative_path: str) -> bool:
+        """
+        Updates the path of a tracked file, preserving its snapshot history.
+        Returns True if the file was found and updated, False otherwise.
+        """
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            
+            file_row = conn.execute("SELECT id, status FROM files WHERE path = ?", (old_relative_path,)).fetchone()
+            if not file_row or file_row["status"] == "deleted":
+                return False
+                
+            dest_row = conn.execute("SELECT id FROM files WHERE path = ?", (new_relative_path,)).fetchone()
+            if dest_row:
+                # If there's already a file at the new path, remove it to allow the rename
+                conn.execute("DELETE FROM files WHERE id = ?", (dest_row["id"],))
+                
+            conn.execute("UPDATE files SET path = ? WHERE id = ?", (new_relative_path, file_row["id"]))
+            return True
+
     def get_snapshots_for_file(self, relative_path: str) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             rows = conn.execute('''
