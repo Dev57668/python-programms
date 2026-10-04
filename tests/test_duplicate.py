@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backup import BackupEngine
-from config import Config
+from codevault.backup import BackupEngine
+from codevault.config import Config
 
 
 class TestDuplicateDetection(unittest.TestCase):

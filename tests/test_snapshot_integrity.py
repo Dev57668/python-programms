@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
-from config import Config
-from backup import BackupEngine
+from codevault.config import Config
+from codevault.backup import BackupEngine
 
 def test_snapshot_integrity(tmp_path):
     """

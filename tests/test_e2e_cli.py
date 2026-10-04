@@ -1,5 +1,5 @@
 """
-End-to-End CLI tests for Code Lifejacket.
+End-to-End CLI tests for CodeVault.
 Spawns subprocesses to verify CLI commands work exactly as expected from the shell.
 """
 
@@ -42,12 +42,12 @@ class TestCLIEndToEnd(unittest.TestCase):
         """Verify python main.py status works on project dir."""
         result = self._run_cli("status", str(self.test_dir))
         self.assertEqual(result.returncode, 0)
-        self.assertIn("CODE LIFEJACKET - STATUS", result.stdout)
+        self.assertIn("CODEVAULT - STATUS", result.stdout)
 
     def test_full_recovery_flow(self):
         """Simulate initial backup, modification, accidental deletion, and restore."""
-        from backup import BackupEngine
-        from config import Config
+        from codevault.backup import BackupEngine
+        from codevault.config import Config
 
         cfg = Config()
         engine = BackupEngine(self.test_dir, cfg)
@@ -86,15 +86,15 @@ class TestCLIEndToEnd(unittest.TestCase):
         self.assertTrue(self.sample_file.exists())
         self.assertIn("# v2", self.sample_file.read_text(encoding="utf-8"))
 
-        # 7. Clean CLI
-        clean_result = self._run_cli("clean", str(self.test_dir), "--yes")
+        # 7. Purge CLI
+        clean_result = self._run_cli("purge", str(self.test_dir), "--yes")
         self.assertEqual(clean_result.returncode, 0)
-        self.assertIn("Cleaned all snapshots", clean_result.stdout)
+        self.assertIn("[OK] Purge complete.", clean_result.stdout)
 
     def test_recover_command_cli(self):
         """Verify python main.py recover <file> interactive command via CLI subprocess."""
-        from backup import BackupEngine
-        from config import Config
+        from codevault.backup import BackupEngine
+        from codevault.config import Config
 
         cfg = Config()
         engine = BackupEngine(self.test_dir, cfg)
@@ -121,7 +121,7 @@ class TestCLIEndToEnd(unittest.TestCase):
         )
 
         self.assertEqual(proc.returncode, 0)
-        self.assertIn("CODE LIFEJACKET - RECOVERY", proc.stdout)
+        self.assertIn("CODEVAULT - RECOVERY", proc.stdout)
         self.assertIn("Status:     DELETED / MISSING", proc.stdout)
         self.assertIn("Selection", proc.stdout)
         self.assertIn("Proceed with restoration? (y/N):", proc.stdout)

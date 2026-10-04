@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from utils import format_timestamp
+from codevault.utils import format_timestamp
 
 class Database:
     """Manages metadata persistence for snapshots, tracked files, and deletions using SQLite."""
@@ -85,10 +85,21 @@ class Database:
                 )
             ''')
 
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS renames (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_id      INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                    old_path     TEXT NOT NULL,
+                    new_path     TEXT NOT NULL,
+                    timestamp    TEXT NOT NULL
+                )
+            ''')
+
             conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_file_time ON snapshots(file_id, created_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_blob      ON snapshots(blob_hash)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_time      ON snapshots(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_files_status        ON files(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_renames_file        ON renames(file_id)")
 
     def _migrate_if_needed(self) -> None:
         """Migrate existing metadata.json if it exists."""
@@ -259,11 +270,37 @@ class Database:
                 "last_snapshot_path": last_snap["snapshot_path"] if last_snap else None
             }
 
+    def handle_rename(self, old_relative_path: str, new_relative_path: str) -> bool:
+        """
+        Updates the path of a tracked file, preserving its snapshot history.
+        Returns True if the file was found and updated, False otherwise.
+        """
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            
+            file_row = conn.execute("SELECT id, status FROM files WHERE path = ?", (old_relative_path,)).fetchone()
+            if not file_row or file_row["status"] == "deleted":
+                return False
+            
+            file_id = file_row["id"]
+                
+            dest_row = conn.execute("SELECT id FROM files WHERE path = ?", (new_relative_path,)).fetchone()
+            if dest_row:
+                # If there's already a file at the new path, remove it to allow the rename
+                conn.execute("DELETE FROM files WHERE id = ?", (dest_row["id"],))
+                
+            conn.execute("UPDATE files SET path = ? WHERE id = ?", (new_relative_path, file_id))
+            
+            now_str = format_timestamp(datetime.now())
+            conn.execute("INSERT INTO renames (file_id, old_path, new_path, timestamp) VALUES (?, ?, ?, ?)",
+                         (file_id, old_relative_path, new_relative_path, now_str))
+            return True
+
     def get_snapshots_for_file(self, relative_path: str) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -277,7 +314,7 @@ class Database:
         with self._get_connection() as conn:
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -285,6 +322,26 @@ class Database:
             ''').fetchall()
             
             return [dict(row) for row in rows]
+
+    def get_snapshot_by_id(self, snapshot_id: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute('''
+                SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                JOIN blobs b ON s.blob_hash = b.hash
+                WHERE s.id = ?
+            ''', (snapshot_id,)).fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def set_pin_status(self, snapshot_id: int, pinned: bool) -> bool:
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            cursor = conn.execute("UPDATE snapshots SET pinned = ? WHERE id = ?", (1 if pinned else 0, snapshot_id))
+            return cursor.rowcount > 0
 
     def get_tracked_files(self) -> Dict[str, Any]:
         with self._get_connection() as conn:
@@ -332,14 +389,13 @@ class Database:
                 "last_snapshot_path": row["last_snapshot_path"]
             } for row in rows]
 
-    def prune_old_snapshots(self, relative_path: str, max_allowed: int) -> List[Dict[str, Any]]:
+    def prune_old_snapshots(self, relative_path: str, max_allowed: int, max_age_days: int = 30) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             conn.execute("BEGIN EXCLUSIVE")
             
-            # Fetch all snapshots for file ordered by time ascending
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -347,11 +403,38 @@ class Database:
                 ORDER BY s.created_at ASC, s.id ASC
             ''', (relative_path,)).fetchall()
             
-            if len(rows) <= max_allowed:
+            if not rows:
                 return []
                 
-            excess_count = len(rows) - max_allowed
-            to_remove = rows[:excess_count]
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.now() - timedelta(days=max_age_days)
+            
+            # The newest snapshot is the last one in the sorted list
+            newest_id = rows[-1]["id"]
+            
+            to_remove = []
+            
+            # Find removable candidates
+            # When both policies apply, a snapshot is removable only when it is not protected by the newest-snapshot rule and not pinned
+            # 1. Any snapshot older than max_age_days
+            # 2. Any snapshot beyond max_allowed (newest preserved first)
+            
+            # We determine which ones to keep due to max_allowed
+            # The ones to keep are the newest `max_allowed`
+            keep_due_to_count = set(r["id"] for r in rows[-max_allowed:])
+            
+            for row in rows:
+                if row["id"] == newest_id:
+                    continue # Always preserve the newest snapshot
+                if row["pinned"] == 1:
+                    continue # Never delete a pinned snapshot
+                    
+                row_dt = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+                is_old = row_dt < cutoff_date
+                is_excess = row["id"] not in keep_due_to_count
+                
+                if is_old or is_excess:
+                    to_remove.append(row)
             
             removed_dicts = []
             for row in to_remove:
@@ -378,3 +461,75 @@ class Database:
             conn.execute("DELETE FROM snapshots")
             conn.execute("DELETE FROM blobs")
             conn.execute("DELETE FROM files")
+            conn.execute("DELETE FROM renames")
+
+    def get_timeline_events(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            files = conn.execute("SELECT id, path, first_seen, deleted_at FROM files").fetchall()
+            events = []
+            for f in files:
+                events.append({
+                    "timestamp": f["first_seen"],
+                    "event": "CREATED",
+                    "path": f["path"],
+                    "snapshot_id": None,
+                    "file_id": f["id"]
+                })
+                if f["deleted_at"]:
+                    events.append({
+                        "timestamp": f["deleted_at"],
+                        "event": "DELETED",
+                        "path": f["path"],
+                        "snapshot_id": None,
+                        "file_id": f["id"]
+                    })
+
+            snaps = conn.execute("SELECT s.id, s.created_at, s.event_type, f.path, f.id as file_id FROM snapshots s JOIN files f ON s.file_id = f.id").fetchall()
+            for s in snaps:
+                e_type = s["event_type"].upper()
+                if e_type == "CREATION": e_type = "CREATED"
+                elif e_type == "MODIFIED": e_type = "MODIFIED"
+                events.append({
+                    "timestamp": s["created_at"],
+                    "event": e_type,
+                    "path": s["path"],
+                    "snapshot_id": s["id"],
+                    "file_id": s["file_id"]
+                })
+
+            renames = conn.execute("SELECT r.timestamp, r.old_path, r.new_path, r.file_id FROM renames r").fetchall()
+            for r in renames:
+                events.append({
+                    "timestamp": r["timestamp"],
+                    "event": "RENAMED",
+                    "path": f"{r['old_path']} -> {r['new_path']}",
+                    "old_path": r["old_path"],
+                    "new_path": r["new_path"],
+                    "snapshot_id": None,
+                    "file_id": r["file_id"]
+                })
+
+        events.sort(key=lambda x: x["timestamp"])
+
+        dedup = []
+        for ev in events:
+            if not dedup:
+                dedup.append(ev)
+                continue
+            last = dedup[-1]
+            
+            # Merge CREATED events for same file
+            if ev["file_id"] == last["file_id"] and ev["event"] == last["event"] and ev["timestamp"] == last["timestamp"]:
+                if ev["snapshot_id"] and not last["snapshot_id"]:
+                    last["snapshot_id"] = ev["snapshot_id"]
+                continue
+                
+            # Merge CREATED close together (first_seen vs snapshot creation)
+            if ev["file_id"] == last["file_id"] and ev["event"] == "CREATED" and last["event"] == "CREATED":
+                if ev["snapshot_id"] and not last["snapshot_id"]:
+                    last["snapshot_id"] = ev["snapshot_id"]
+                continue
+
+            dedup.append(ev)
+
+        return dedup

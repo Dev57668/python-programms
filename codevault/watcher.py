@@ -1,5 +1,5 @@
 """
-File Watcher Module for Code Lifejacket.
+File Watcher Module for CodeVault.
 Leverages watchdog to monitor filesystem events in real-time,
 applies debouncing to suppress duplicate editor-save bursts,
 and guarantees watcher resilience through comprehensive exception shielding.
@@ -15,13 +15,13 @@ from typing import Dict, Optional
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from backup import BackupEngine
-from config import Config
+from codevault.backup import BackupEngine
+from codevault.config import Config
 
-logger = logging.getLogger("lifejacket")
+logger = logging.getLogger("codevault")
 
 
-class LifejacketEventHandler(FileSystemEventHandler):
+class CodeVaultEventHandler(FileSystemEventHandler):
     """
     Handles filesystem events (modified, created, deleted) with debouncing
     and exception shielding so the watcher process never crashes.
@@ -127,15 +127,53 @@ class LifejacketEventHandler(FileSystemEventHandler):
         except Exception as e:
             logger.error(f"[Watcher Exception Shield] Error handling deletion for '{event.src_path}': {e}")
 
+    def on_moved(self, event: FileSystemEvent) -> None:
+        """Triggered when a file or directory is moved/renamed."""
+        if event.is_directory:
+            return
 
-class LifejacketWatcher:
+        src_path = Path(event.src_path)
+        dest_path = Path(event.dest_path)
+        
+        try:
+            # Cancel any pending backups for both src and dest
+            self._cancel_timer(str(src_path))
+            self._cancel_timer(str(dest_path))
+            
+            def is_monitored(path: Path) -> bool:
+                try:
+                    path.resolve().relative_to(self.backup_engine.project_dir)
+                    return self.config.is_monitored_file(path) and not self.config.is_ignored_path(path, self.backup_engine.project_dir)
+                except ValueError:
+                    return False
+            
+            src_monitored = is_monitored(src_path)
+            dest_monitored = is_monitored(dest_path)
+            
+            if src_monitored and dest_monitored:
+                # Rename within monitored project
+                self.backup_engine.handle_rename(src_path, dest_path)
+                # Create snapshot for the new file if content changed
+                self._schedule_backup(str(dest_path), "renamed")
+            elif src_monitored and not dest_monitored:
+                # Moved out of project or to ignored/unmonitored path
+                self.backup_engine.handle_deletion(src_path)
+            elif not src_monitored and dest_monitored:
+                # Moved into project from outside or ignored
+                self._schedule_backup(str(dest_path), "created")
+                
+        except Exception as e:
+            logger.error(f"[Watcher Exception Shield] Error handling move for '{event.src_path}': {e}")
+
+
+class CodeVaultWatcher:
     """Manages the watchdog observer lifecycle."""
 
     def __init__(self, project_dir: Path, config: Optional[Config] = None):
         self.project_dir = Path(project_dir).resolve()
         self.config = config or Config()
         self.backup_engine = BackupEngine(self.project_dir, self.config)
-        self.event_handler = LifejacketEventHandler(self.backup_engine, self.config)
+        self.event_handler = CodeVaultEventHandler(self.backup_engine, self.config)
         self.observer = Observer()
         self._running = False
 
@@ -170,7 +208,7 @@ class LifejacketWatcher:
             return
 
         print("\n" + "=" * 70)
-        print("  Code Lifejacket - Real-Time Accidental Delete Recovery System")
+        print("  CodeVault - Real-Time Accidental Delete Recovery System")
         print("=" * 70)
         print(f"Monitoring:          {self.project_dir}")
         print(f"File Extensions:     {', '.join(sorted(self.config.monitored_extensions))}")
@@ -183,7 +221,7 @@ class LifejacketWatcher:
         initial_count = self.scan_and_snapshot_existing()
         print(f"Initial scan complete. {initial_count} new file snapshot(s) cataloged.")
         print("-" * 70)
-        print("Lifejacket is ACTIVE. Press Ctrl+C at any time to stop.\n")
+        print("CodeVault is ACTIVE. Press Ctrl+C at any time to stop.\n")
 
         self.observer.schedule(self.event_handler, str(self.project_dir), recursive=True)
         self.observer.start()
@@ -193,7 +231,7 @@ class LifejacketWatcher:
             while self._running and self.observer.is_alive():
                 time.sleep(0.5)
         except KeyboardInterrupt:
-            print("\nShutting down Code Lifejacket watcher...")
+            print("\nShutting down CodeVault watcher...")
         finally:
             self.stop()
 
@@ -203,4 +241,4 @@ class LifejacketWatcher:
         if self.observer.is_alive():
             self.observer.stop()
             self.observer.join(timeout=2.0)
-        print("Code Lifejacket watcher stopped.")
+        print("CodeVault watcher stopped.")

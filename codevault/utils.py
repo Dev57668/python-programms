@@ -2,7 +2,8 @@ import hashlib
 import logging
 import os
 import shutil
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import tempfile
@@ -28,7 +29,7 @@ def compute_file_hash(file_path: Path) -> Optional[str]:
                 sha256.update(chunk)
         return sha256.hexdigest()
     except (OSError, PermissionError) as e:
-        logging.getLogger("lifejacket").debug(f"Unable to read file for hashing {file_path}: {e}")
+        logging.getLogger("codevault").debug(f"Unable to read file for hashing {file_path}: {e}")
         return None
 
 def atomic_write(file_path: Path, content: bytes) -> None:
@@ -121,6 +122,38 @@ def format_timestamp_filename(dt: Optional[datetime] = None) -> str:
     return dt.strftime("%Y%m%d_%H%M%S_%f")
 
 
+def parse_time_string(time_str: str) -> datetime:
+    """
+    Parse a time string into a datetime object.
+    Supports:
+    - ISO datetime (e.g. 2026-09-29T10:00:00)
+    - HH:MM (today)
+    - Relative time (10m, 2h, 1d)
+    """
+    now = datetime.now()
+    
+    # Relative time
+    m = re.match(r"^(\d+)([mhd])$", time_str.strip().lower())
+    if m:
+        val = int(m.group(1))
+        unit = m.group(2)
+        if unit == "m":
+            return now - timedelta(minutes=val)
+        elif unit == "h":
+            return now - timedelta(hours=val)
+        elif unit == "d":
+            return now - timedelta(days=val)
+
+    # HH:MM today
+    m = re.match(r"^(\d{1,2}):(\d{2})$", time_str.strip())
+    if m:
+        h, mn = int(m.group(1)), int(m.group(2))
+        return now.replace(hour=h, minute=mn, second=0, microsecond=0)
+
+    # Fallback to standard ISO parsing
+    return datetime.fromisoformat(time_str)
+
+
 def format_size(size_bytes: int) -> str:
     """Format byte count into a human-friendly string (e.g., 12.4 KB)."""
     if size_bytes < 1024:
@@ -145,7 +178,7 @@ def get_relative_path(file_path: Path, base_dir: Path) -> str:
 
 def setup_logger(log_file: Optional[Path] = None, log_level: str = "INFO") -> logging.Logger:
     """
-    Configure and return the root logger for Code Lifejacket.
+    Configure and return the root logger for CodeVault.
     
     Args:
         log_file: Optional file path to write log entries to.
@@ -154,7 +187,7 @@ def setup_logger(log_file: Optional[Path] = None, log_level: str = "INFO") -> lo
     Returns:
         Configured Logger instance.
     """
-    logger = logging.getLogger("lifejacket")
+    logger = logging.getLogger("codevault")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
     # Avoid duplicate handlers if already configured

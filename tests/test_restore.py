@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from config import Config
-from recovery import RecoveryEngine
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
 
 
 class TestFileRestore(unittest.TestCase):
@@ -168,7 +168,7 @@ class TestFileRestore(unittest.TestCase):
 
         output = buf.getvalue()
         self.assertTrue(success)
-        self.assertIn("CODE LIFEJACKET - RECOVERY", output)
+        self.assertIn("CODEVAULT - RECOVERY", output)
         self.assertIn("Status:     ACTIVE", output)
         self.assertIn("Selection | ID", output)
         self.assertIn("Timestamp", output)
@@ -226,6 +226,196 @@ class TestFileRestore(unittest.TestCase):
         self.assertFalse(success)
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_restore_unknown_path(tmp_path, capsys):
+    from codevault.config import Config
+    from codevault.recovery import RecoveryEngine
+    cfg = Config()
+    recovery = RecoveryEngine(tmp_path, cfg)
 
+    src = tmp_path / "missing.py"
+    
+    success = recovery.restore_file(src, snapshot_id=1, force=True)
+    assert success is False
+    
+    captured = capsys.readouterr()
+    assert "[Error] No snapshots found" in captured.out
+    assert "Did you mean another file" in captured.out
+
+def test_restore_pre_restore(tmp_path):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "data.py"
+    src.write_text("v1", encoding="utf-8")
+    s1 = engine.create_snapshot(src)
+
+    src.write_text("v2_modified", encoding="utf-8")
+    
+    # Restore v1 over v2
+    recovery.restore_file(src, snapshot_id=s1["id"], force=True)
+    
+    # Check that a pre_restore snapshot was created for v2_modified
+    snaps = recovery.db.get_snapshots_for_file("data.py")
+    pre_restores = [s for s in snaps if s["event_type"] == "pre_restore"]
+    assert len(pre_restores) == 1
+    assert src.read_text(encoding="utf-8") == "v1"
+
+def test_restore_to_path(tmp_path):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "data.py"
+    src.write_text("v1", encoding="utf-8")
+    s1 = engine.create_snapshot(src)
+
+    src.write_text("v2_modified", encoding="utf-8")
+    
+    out = tmp_path / "restored.py"
+    recovery.restore_file(src, snapshot_id=s1["id"], force=True, out_path=out)
+    
+    assert src.read_text(encoding="utf-8") == "v2_modified"
+    assert out.read_text(encoding="utf-8") == "v1"
+
+def test_restore_at_time(tmp_path):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    from codevault.utils import format_timestamp
+    from datetime import datetime, timedelta
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "data.py"
+    src.write_text("v1", encoding="utf-8")
+    s1 = engine.create_snapshot(src)
+
+    t_v1 = datetime.now() - timedelta(hours=2)
+    with recovery.db._get_connection() as conn:
+        conn.execute("UPDATE snapshots SET created_at = ? WHERE id = ?", (format_timestamp(t_v1), s1["id"]))
+
+    src.write_text("v2", encoding="utf-8")
+    engine.create_snapshot(src)
+
+    recovery.restore_file(src, force=True, at_time="1h")
+    assert src.read_text(encoding="utf-8") == "v1"
+
+def test_restore_integrity_verification(tmp_path, capsys):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "integ.py"
+    src.write_text("v1", encoding="utf-8")
+    s1 = engine.create_snapshot(src)
+
+    src.write_text("current", encoding="utf-8")
+
+    # Corrupt the snapshot file
+    snap_path = tmp_path / s1["snapshot_path"]
+    snap_path.write_text("corrupted", encoding="utf-8")
+
+    success = recovery.restore_file(src, snapshot_id=s1["id"], force=True)
+    assert success is False
+
+    captured = capsys.readouterr()
+    assert "Snapshot integrity verification failed" in captured.out
+
+    # Destination should be completely unchanged
+    assert src.read_text(encoding="utf-8") == "current"
+
+def test_restore_failed_copy_safety(tmp_path, monkeypatch):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "safety.py"
+    src.write_text("v1", encoding="utf-8")
+    s1 = engine.create_snapshot(src)
+
+    src.write_text("v2", encoding="utf-8")
+
+    # Force atomic_copy to fail
+    def mock_atomic_copy(*args, **kwargs):
+        raise OSError("Mock disk error")
+    
+    import codevault.recovery as rec_module
+    monkeypatch.setattr(rec_module, "atomic_copy", mock_atomic_copy)
+
+    success = recovery.restore_file(src, snapshot_id=s1["id"], force=True)
+    assert success is False
+
+    # Original file must remain untouched
+    assert src.read_text(encoding="utf-8") == "v2"
+
+def test_restore_missing_snapshot(tmp_path, capsys):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "miss.py"
+    src.write_text("v1", encoding="utf-8")
+    s1 = engine.create_snapshot(src)
+
+    src.write_text("v2", encoding="utf-8")
+
+    # Delete snapshot file
+    snap_path = tmp_path / s1["snapshot_path"]
+    snap_path.unlink()
+
+    success = recovery.restore_file(src, snapshot_id=s1["id"], force=True)
+    assert success is False
+
+    captured = capsys.readouterr()
+    assert "Snapshot file missing on disk" in captured.out
+    
+    # Destination unchanged
+    assert src.read_text(encoding="utf-8") == "v2"
+
+def test_restore_permissions_metadata(tmp_path):
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    import os
+    import stat
+    cfg = Config()
+    engine = BackupEngine(tmp_path, cfg)
+    recovery = RecoveryEngine(tmp_path, cfg)
+
+    src = tmp_path / "script.py"
+    src.write_text("echo hello", encoding="utf-8")
+    
+    # Set executable bit
+    current_stat = os.stat(src)
+    os.chmod(src, current_stat.st_mode | stat.S_IEXEC)
+    
+    s1 = engine.create_snapshot(src)
+    
+    # Remove executable bit
+    os.chmod(src, current_stat.st_mode & ~stat.S_IEXEC)
+    
+    # Restore
+    success = recovery.restore_file(src, snapshot_id=s1["id"], force=True)
+    assert success is True
+    
+    # Check if executable bit is restored (platform tolerant, but Windows generally ignores this)
+    if os.name != 'nt':
+        restored_stat = os.stat(src)
+        assert bool(restored_stat.st_mode & stat.S_IEXEC) is True

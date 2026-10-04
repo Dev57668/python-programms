@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from config import Config
-from recovery import RecoveryEngine
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
 
 
 class TestDeletionProtection(unittest.TestCase):

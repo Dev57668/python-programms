@@ -1,1 +1,1 @@
-# Tests package for Code Lifejacket
+# Tests package for CodeVault

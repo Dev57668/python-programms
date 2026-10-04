@@ -1,5 +1,5 @@
 """
-Backup Engine for Code Lifejacket.
+Backup Engine for CodeVault.
 Creates timestamped shadow copies preserving relative folder hierarchy,
 performs duplicate prevention using SHA-256 hashing,
 enforces snapshot retention limits, and handles file deletions safely.
@@ -12,9 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from config import Config
-from database import Database
-from utils import (
+from codevault.config import Config
+from codevault.database import Database
+from codevault.utils import (
     compute_file_hash,
     format_size,
     format_timestamp,
@@ -22,7 +22,7 @@ from utils import (
     get_relative_path,
 )
 
-logger = logging.getLogger("lifejacket")
+logger = logging.getLogger("codevault")
 
 
 class BackupEngine:
@@ -39,7 +39,7 @@ class BackupEngine:
         self.project_dir = Path(project_dir).resolve()
         self.config = config or Config()
 
-        # Lifejacket hidden storage directory
+        # CodeVault hidden storage directory
         self.lifejacket_dir = self.project_dir / self.config.snapshot_directory_name
         self.snapshots_dir = self.lifejacket_dir / "snapshots"
         self.db_path = self.lifejacket_dir / "metadata.json"
@@ -97,7 +97,7 @@ class BackupEngine:
 
         # 5. Copy file atomically and compute hash simultaneously
         try:
-            from utils import atomic_copy_and_hash
+            from codevault.utils import atomic_copy_and_hash
             current_hash, file_size = atomic_copy_and_hash(resolved_path, snapshot_dest_path)
         except Exception as e:
             logger.error(f"Failed to create snapshot copy for {relative_path_str}: {e}")
@@ -130,11 +130,11 @@ class BackupEngine:
         )
 
         logger.info(
-            f"[Lifejacket Snapshot #{record['id']}] Saved: {relative_path_str} ({format_size(file_size)}) [SHA: {current_hash[:8]}]"
+            f"[CodeVault Snapshot #{record['id']}] Saved: {relative_path_str} ({format_size(file_size)}) [SHA: {current_hash[:8]}]"
         )
 
         # 8. Enforce snapshot retention limits (prune oldest if exceeded)
-        pruned_records = self.db.prune_old_snapshots(relative_path_str, self.config.max_snapshots)
+        pruned_records = self.db.prune_old_snapshots(relative_path_str, self.config.max_snapshots, self.config.max_age_days)
         for pruned in pruned_records:
             pruned_file = self.project_dir / pruned["snapshot_path"]
             if pruned_file.exists():
@@ -176,7 +176,30 @@ class BackupEngine:
             )
         return deletion_record
 
-    def clean(self) -> None:
+    def handle_rename(self, old_file_path: Path, new_file_path: Path) -> bool:
+        """
+        Record when a tracked source file has been moved or renamed.
+        Preserves the history by updating the path in the database.
+        
+        Args:
+            old_file_path: The original path of the file.
+            new_file_path: The new path of the file.
+            
+        Returns:
+            True if the rename was processed, False otherwise.
+        """
+        old_resolved = Path(old_file_path).resolve()
+        new_resolved = Path(new_file_path).resolve()
+        
+        old_rel = get_relative_path(old_resolved, self.project_dir)
+        new_rel = get_relative_path(new_resolved, self.project_dir)
+        
+        success = self.db.handle_rename(old_rel, new_rel)
+        if success:
+            logger.info(f"[CodeVault] Tracked file renamed: '{old_rel}' -> '{new_rel}'")
+        return success
+
+    def purge(self) -> None:
         """Purge all stored snapshots and reset the database."""
         if self.snapshots_dir.exists():
             shutil.rmtree(self.snapshots_dir)

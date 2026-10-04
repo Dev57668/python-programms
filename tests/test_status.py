@@ -9,9 +9,9 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from backup import BackupEngine
-from config import Config
-from recovery import RecoveryEngine
+from codevault.backup import BackupEngine
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
 
 
 class TestStatusDashboard(unittest.TestCase):
@@ -45,8 +45,8 @@ class TestStatusDashboard(unittest.TestCase):
         with redirect_stdout(buf):
             self.recovery_engine.print_status()
         output = buf.getvalue()
-        self.assertIn("CODE LIFEJACKET - STATUS", output)
-        self.assertIn("○ INACTIVE", output)
+        self.assertIn("CODEVAULT - STATUS", output)
+        self.assertIn("INACTIVE", output)
         self.assertIn("No tracked files yet.", output)
 
     def test_protected_files_and_snapshots_counts(self):
@@ -141,10 +141,10 @@ class TestStatusDashboard(unittest.TestCase):
             self.recovery_engine.print_status()
 
         output = buf.getvalue()
-        self.assertIn("CODE LIFEJACKET - STATUS", output)
+        self.assertIn("CODEVAULT - STATUS", output)
         self.assertIn("Project:", output)
         self.assertIn("Protection:", output)
-        self.assertIn("● ACTIVE", output)
+        self.assertIn("ACTIVE", output)
         self.assertIn("Protected Files:", output)
         self.assertIn("Total Snapshots:", output)
         self.assertIn("Deleted Files:", output)
@@ -152,7 +152,7 @@ class TestStatusDashboard(unittest.TestCase):
         self.assertIn("Last Snapshot:", output)
         self.assertIn("FILE ACTIVITY", output)
         self.assertIn("STORAGE", output)
-        self.assertIn("Lifejacket Directory:", output)
+        self.assertIn("CodeVault Directory:", output)
         self.assertIn("Maximum Snapshots:", output)
         self.assertIn("service.py", output)
 
