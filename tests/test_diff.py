@@ -13,8 +13,8 @@ def test_diff_valid(tmp_path):
     file_path.write_text("Line 1\n", encoding="utf-8")
     
     # Init via BackupEngine directly
-    from backup import BackupEngine
-    from config import Config
+    from codevault.backup import BackupEngine
+    from codevault.config import Config
 
     config = Config(project_dir / ".lifejacket" / "config.json")
     engine = BackupEngine(project_dir, config)
@@ -51,8 +51,8 @@ def test_diff_invalid_id(tmp_path):
     file_path = project_dir / "test.py"
     file_path.write_text("Line 1\n", encoding="utf-8")
     
-    from backup import BackupEngine
-    from config import Config
+    from codevault.backup import BackupEngine
+    from codevault.config import Config
     
     config = Config(project_dir / ".lifejacket" / "config.json")
     engine = BackupEngine(project_dir, config)

@@ -3,9 +3,9 @@ import shutil
 import pytest
 from pathlib import Path
 
-from config import Config
-from backup import BackupEngine
-from watcher import LifejacketWatcher
+from codevault.config import Config
+from codevault.backup import BackupEngine
+from codevault.watcher import LifejacketWatcher
 
 @pytest.fixture
 def test_env(tmp_path):

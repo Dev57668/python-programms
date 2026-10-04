@@ -12,9 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from config import Config
-from database import Database
-from utils import (
+from codevault.config import Config
+from codevault.database import Database
+from codevault.utils import (
     compute_file_hash,
     format_size,
     format_timestamp,
@@ -97,7 +97,7 @@ class BackupEngine:
 
         # 5. Copy file atomically and compute hash simultaneously
         try:
-            from utils import atomic_copy_and_hash
+            from codevault.utils import atomic_copy_and_hash
             current_hash, file_size = atomic_copy_and_hash(resolved_path, snapshot_dest_path)
         except Exception as e:
             logger.error(f"Failed to create snapshot copy for {relative_path_str}: {e}")

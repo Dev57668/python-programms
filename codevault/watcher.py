@@ -15,8 +15,8 @@ from typing import Dict, Optional
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from backup import BackupEngine
-from config import Config
+from codevault.backup import BackupEngine
+from codevault.config import Config
 
 logger = logging.getLogger("lifejacket")
 

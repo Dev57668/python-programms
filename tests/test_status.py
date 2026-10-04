@@ -9,9 +9,9 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from backup import BackupEngine
-from config import Config
-from recovery import RecoveryEngine
+from codevault.backup import BackupEngine
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
 
 
 class TestStatusDashboard(unittest.TestCase):

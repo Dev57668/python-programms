@@ -12,8 +12,8 @@ def test_timeline_output(tmp_path):
     file1 = project_dir / "a.py"
     file1.write_text("A\n", encoding="utf-8")
     
-    from backup import BackupEngine
-    from config import Config
+    from codevault.backup import BackupEngine
+    from codevault.config import Config
     
     config = Config(project_dir / ".lifejacket" / "config.json")
     engine = BackupEngine(project_dir, config)

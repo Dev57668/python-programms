@@ -13,8 +13,8 @@ def test_cli_restore(tmp_path):
     src.write_text("v1", encoding="utf-8")
     
     # Create snapshot using Python API to set up
-    from config import Config
-    from backup import BackupEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
     cfg = Config()
     engine = BackupEngine(project_dir, cfg)
     s1 = engine.create_snapshot(src)
@@ -41,8 +41,8 @@ def test_cli_recover(tmp_path):
     src = project_dir / "cli_rec.py"
     src.write_text("v1", encoding="utf-8")
     
-    from config import Config
-    from backup import BackupEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
     cfg = Config()
     engine = BackupEngine(project_dir, cfg)
     s1 = engine.create_snapshot(src)

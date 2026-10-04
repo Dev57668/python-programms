@@ -11,10 +11,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backup import BackupEngine
-from config import Config
-from database import Database
-from utils import format_size, get_relative_path, parse_time_string, compute_file_hash, atomic_copy
+from codevault.backup import BackupEngine
+from codevault.config import Config
+from codevault.database import Database
+from codevault.utils import format_size, get_relative_path, parse_time_string, compute_file_hash, atomic_copy
 
 logger = logging.getLogger("lifejacket")
 
@@ -617,7 +617,7 @@ class RecoveryEngine:
         """
         data = self.get_status_data()
         
-        from daemon import DaemonManager
+        from codevault.daemon import DaemonManager
         dm = DaemonManager(self.project_dir, self.project_dir / self.config.snapshot_directory_name)
         daemon_info = dm.status()
 

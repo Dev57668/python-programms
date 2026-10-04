@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
-from config import Config
-from daemon import DaemonManager
+from codevault.config import Config
+from codevault.daemon import DaemonManager
 
 
 def test_daemon_real_subprocess_lifecycle(tmp_path):
@@ -44,19 +44,16 @@ def test_daemon_real_subprocess_lifecycle(tmp_path):
     assert not is_stale
     
     # Start it using a mocked main script path so it just sleeps
-    with patch("daemon.Path") as mock_path:
-        # Mock Path(__file__).parent / "main.py" to point to our dummy script
-        class FakePath:
-            def __init__(self, *args, **kwargs):
-                pass
-            @property
-            def parent(self):
-                class Parent:
-                    def __truediv__(self, other):
-                        return dummy_script
-                return Parent()
-                
-        mock_path.side_effect = FakePath
+    import subprocess
+    orig_popen = subprocess.Popen
+    with patch("codevault.daemon.subprocess.Popen") as mock_popen:
+        
+        def fake_popen(args, **kwargs):
+            # Change the execution to dummy_script
+            args = [sys.executable, str(dummy_script)]
+            return orig_popen(args, **kwargs)
+            
+        mock_popen.side_effect = fake_popen
         
         # We need to temporarily disable _is_our_process check because our 
         # dummy script might not have "python" and "main.py" strictly in 

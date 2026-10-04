@@ -3,7 +3,7 @@ import sqlite3
 import multiprocessing
 from pathlib import Path
 import pytest
-from database import Database as NewDatabase
+from codevault.database import Database as NewDatabase
 from tests.old_database import Database as OldDatabase
 
 @pytest.fixture

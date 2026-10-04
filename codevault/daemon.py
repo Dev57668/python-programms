@@ -67,13 +67,13 @@ class DaemonManager:
                     f'wmic process where processid={pid} get commandline',
                     shell=True, text=True, stderr=subprocess.DEVNULL
                 )
-                return 'python' in output.lower() and 'main.py' in output.lower()
+                return 'python' in output.lower() and ('main.py' in output.lower() or 'codevault' in output.lower())
             else:
                 output = subprocess.check_output(
                     ['ps', '-p', str(pid), '-o', 'command='],
                     text=True, stderr=subprocess.DEVNULL
                 )
-                return 'python' in output.lower() and 'main.py' in output.lower()
+                return 'python' in output.lower() and ('main.py' in output.lower() or 'codevault' in output.lower())
         except Exception:
             # Fallback if ps/wmic fail (e.g. not installed or restricted)
             return True
@@ -114,7 +114,7 @@ class DaemonManager:
             sys.exit(1)
             
         # We need to spawn `python main.py watch <project_dir>` in the background
-        main_script = Path(__file__).parent / "main.py"
+        
         
         # We use subprocess.Popen to detach the process
         # On Windows, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
@@ -131,7 +131,7 @@ class DaemonManager:
         
         try:
             process = subprocess.Popen(
-                [sys.executable, str(main_script), "watch", str(self.project_dir)],
+            [sys.executable, "-m", "codevault.cli", "watch", str(self.project_dir)],
                 stdin=devnull,
                 stdout=devnull,
                 stderr=devnull,

@@ -14,3 +14,11 @@ Thumbs.db
 # CodeVault runtime data
 .lifejacket/
 .lifejacket.bak/
+__pycache__/
+*.pyc
+.DS_Store
+.lifejacket/
+.lifejacket.bak/
+.venv/
+.venv-test/
+*.egg-info/

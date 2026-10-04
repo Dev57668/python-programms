@@ -17,8 +17,8 @@ def test_timeline_boundary_filtering(tmp_path):
     application_file = src_dir / "application.py"
     application_file.write_text("B\n", encoding="utf-8")
     
-    from backup import BackupEngine
-    from config import Config
+    from codevault.backup import BackupEngine
+    from codevault.config import Config
     
     config = Config(project_dir / ".lifejacket" / "config.json")
     engine = BackupEngine(project_dir, config)

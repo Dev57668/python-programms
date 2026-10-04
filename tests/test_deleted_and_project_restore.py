@@ -5,10 +5,10 @@ import pytest
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from config import Config
-from recovery import RecoveryEngine
-from backup import BackupEngine
-from utils import format_timestamp
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
+from codevault.backup import BackupEngine
+from codevault.utils import format_timestamp
 
 @pytest.fixture
 def test_env(tmp_path):

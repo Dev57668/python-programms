@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from utils import format_timestamp
+from codevault.utils import format_timestamp
 
 class Database:
     """Manages metadata persistence for snapshots, tracked files, and deletions using SQLite."""

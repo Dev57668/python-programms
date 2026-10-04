@@ -1,23 +1,23 @@
 {
     "monitored_extensions": [
+        ".ts",
         ".rs",
         ".cpp",
-        ".java",
+        ".go",
         ".py",
-        ".js",
-        ".ts",
         ".c",
-        ".go"
+        ".java",
+        ".js"
     ],
     "ignored_directories": [
-        "__pycache__",
-        ".vscode",
-        "venv",
-        ".git",
-        "node_modules",
         ".lifejacket",
         ".venv",
+        ".git",
+        "venv",
+        "node_modules",
         "env",
+        ".vscode",
+        "__pycache__",
         ".idea"
     ],
     "max_snapshots": 10,

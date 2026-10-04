@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from config import Config
-from recovery import RecoveryEngine
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
 
 
 class TestFileRestore(unittest.TestCase):
@@ -227,8 +227,8 @@ class TestFileRestore(unittest.TestCase):
 
 
 def test_restore_unknown_path(tmp_path, capsys):
-    from config import Config
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.recovery import RecoveryEngine
     cfg = Config()
     recovery = RecoveryEngine(tmp_path, cfg)
 
@@ -242,9 +242,9 @@ def test_restore_unknown_path(tmp_path, capsys):
     assert "Did you mean another file" in captured.out
 
 def test_restore_pre_restore(tmp_path):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
     cfg = Config()
     engine = BackupEngine(tmp_path, cfg)
     recovery = RecoveryEngine(tmp_path, cfg)
@@ -265,9 +265,9 @@ def test_restore_pre_restore(tmp_path):
     assert src.read_text(encoding="utf-8") == "v1"
 
 def test_restore_to_path(tmp_path):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
     cfg = Config()
     engine = BackupEngine(tmp_path, cfg)
     recovery = RecoveryEngine(tmp_path, cfg)
@@ -285,10 +285,10 @@ def test_restore_to_path(tmp_path):
     assert out.read_text(encoding="utf-8") == "v1"
 
 def test_restore_at_time(tmp_path):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
-    from utils import format_timestamp
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
+    from codevault.utils import format_timestamp
     from datetime import datetime, timedelta
     cfg = Config()
     engine = BackupEngine(tmp_path, cfg)
@@ -309,9 +309,9 @@ def test_restore_at_time(tmp_path):
     assert src.read_text(encoding="utf-8") == "v1"
 
 def test_restore_integrity_verification(tmp_path, capsys):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
     cfg = Config()
     engine = BackupEngine(tmp_path, cfg)
     recovery = RecoveryEngine(tmp_path, cfg)
@@ -336,9 +336,9 @@ def test_restore_integrity_verification(tmp_path, capsys):
     assert src.read_text(encoding="utf-8") == "current"
 
 def test_restore_failed_copy_safety(tmp_path, monkeypatch):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
     cfg = Config()
     engine = BackupEngine(tmp_path, cfg)
     recovery = RecoveryEngine(tmp_path, cfg)
@@ -353,7 +353,7 @@ def test_restore_failed_copy_safety(tmp_path, monkeypatch):
     def mock_atomic_copy(*args, **kwargs):
         raise OSError("Mock disk error")
     
-    import recovery as rec_module
+    import codevault.recovery as rec_module
     monkeypatch.setattr(rec_module, "atomic_copy", mock_atomic_copy)
 
     success = recovery.restore_file(src, snapshot_id=s1["id"], force=True)
@@ -363,9 +363,9 @@ def test_restore_failed_copy_safety(tmp_path, monkeypatch):
     assert src.read_text(encoding="utf-8") == "v2"
 
 def test_restore_missing_snapshot(tmp_path, capsys):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
     cfg = Config()
     engine = BackupEngine(tmp_path, cfg)
     recovery = RecoveryEngine(tmp_path, cfg)
@@ -390,9 +390,9 @@ def test_restore_missing_snapshot(tmp_path, capsys):
     assert src.read_text(encoding="utf-8") == "v2"
 
 def test_restore_permissions_metadata(tmp_path):
-    from config import Config
-    from backup import BackupEngine
-    from recovery import RecoveryEngine
+    from codevault.config import Config
+    from codevault.backup import BackupEngine
+    from codevault.recovery import RecoveryEngine
     import os
     import stat
     cfg = Config()

@@ -46,8 +46,8 @@ class TestCLIEndToEnd(unittest.TestCase):
 
     def test_full_recovery_flow(self):
         """Simulate initial backup, modification, accidental deletion, and restore."""
-        from backup import BackupEngine
-        from config import Config
+        from codevault.backup import BackupEngine
+        from codevault.config import Config
 
         cfg = Config()
         engine = BackupEngine(self.test_dir, cfg)
@@ -93,8 +93,8 @@ class TestCLIEndToEnd(unittest.TestCase):
 
     def test_recover_command_cli(self):
         """Verify python main.py recover <file> interactive command via CLI subprocess."""
-        from backup import BackupEngine
-        from config import Config
+        from codevault.backup import BackupEngine
+        from codevault.config import Config
 
         cfg = Config()
         engine = BackupEngine(self.test_dir, cfg)

@@ -6,9 +6,9 @@ from pathlib import Path
 import time
 from datetime import datetime, timedelta
 
-from config import Config
-from recovery import RecoveryEngine
-from backup import BackupEngine
+from codevault.config import Config
+from codevault.recovery import RecoveryEngine
+from codevault.backup import BackupEngine
 
 @pytest.fixture
 def test_env(tmp_path):

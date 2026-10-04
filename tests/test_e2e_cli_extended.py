@@ -4,8 +4,8 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from config import Config
-from backup import BackupEngine
+from codevault.config import Config
+from codevault.backup import BackupEngine
 
 def test_cli_extended_commands(tmp_path):
     project_dir = tmp_path / "project"

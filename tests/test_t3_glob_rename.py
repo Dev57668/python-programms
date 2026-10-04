@@ -4,9 +4,9 @@ import pytest
 from pathlib import Path
 from collections import namedtuple
 
-from config import Config
-from backup import BackupEngine
-from watcher import LifejacketEventHandler, LifejacketWatcher
+from codevault.config import Config
+from codevault.backup import BackupEngine
+from codevault.watcher import LifejacketEventHandler, LifejacketWatcher
 
 @pytest.fixture
 def test_env(tmp_path):

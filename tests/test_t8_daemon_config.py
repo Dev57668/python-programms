@@ -8,8 +8,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from config import Config
-from daemon import DaemonManager
+from codevault.config import Config
+from codevault.daemon import DaemonManager
 
 @pytest.fixture
 def temp_config_file(tmp_path):
@@ -65,7 +65,7 @@ def test_daemon_status_stopped(daemon_env):
     assert status["status"] == "STOPPED"
     assert status["pid"] is None
 
-@patch("daemon.os.kill")
+@patch("codevault.daemon.os.kill")
 def test_daemon_status_running(mock_kill, daemon_env):
     daemon_env._write_state(12345)
     # mock_kill won't raise ProcessLookupError, meaning process is alive
@@ -74,7 +74,7 @@ def test_daemon_status_running(mock_kill, daemon_env):
     assert status["pid"] == 12345
     mock_kill.assert_called_with(12345, 0)
 
-@patch("daemon.os.kill")
+@patch("codevault.daemon.os.kill")
 def test_daemon_status_stale(mock_kill, daemon_env):
     daemon_env._write_state(12345)
     mock_kill.side_effect = ProcessLookupError()
@@ -82,8 +82,8 @@ def test_daemon_status_stale(mock_kill, daemon_env):
     assert status["status"] == "STALE"
     assert status["pid"] == 12345
 
-@patch("daemon.subprocess.Popen")
-@patch("daemon.DaemonManager._is_daemon_running")
+@patch("codevault.daemon.subprocess.Popen")
+@patch("codevault.daemon.DaemonManager._is_daemon_running")
 def test_daemon_start(mock_is_running, mock_popen, daemon_env):
     mock_is_running.return_value = (False, False, None)
     
@@ -99,15 +99,15 @@ def test_daemon_start(mock_is_running, mock_popen, daemon_env):
     assert state["pid"] == 9999
     assert state["project_dir"] == str(daemon_env.project_dir)
 
-@patch("daemon.DaemonManager._is_daemon_running")
+@patch("codevault.daemon.DaemonManager._is_daemon_running")
 def test_daemon_start_already_running(mock_is_running, daemon_env, capsys):
     mock_is_running.return_value = (True, False, 1234)
     daemon_env.start()
     captured = capsys.readouterr()
     assert "already running" in captured.out
 
-@patch("daemon.os.kill")
-@patch("daemon.DaemonManager._is_daemon_running")
+@patch("codevault.daemon.os.kill")
+@patch("codevault.daemon.DaemonManager._is_daemon_running")
 def test_daemon_stop_graceful(mock_is_running, mock_kill, daemon_env):
     mock_is_running.return_value = (True, False, 1234)
     daemon_env._write_state(1234)
@@ -120,7 +120,7 @@ def test_daemon_stop_graceful(mock_is_running, mock_kill, daemon_env):
         
     assert not daemon_env.pid_file.exists()
 
-@patch("daemon.DaemonManager._is_daemon_running")
+@patch("codevault.daemon.DaemonManager._is_daemon_running")
 def test_daemon_stop_stale(mock_is_running, daemon_env, capsys):
     mock_is_running.return_value = (False, True, 1234)
     daemon_env._write_state(1234)
