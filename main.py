@@ -207,13 +207,25 @@ def handle_stop(args: argparse.Namespace, config: Config) -> None:
     dm = DaemonManager(project_root, project_root / config.snapshot_directory_name)
     dm.stop()
 
+def handle_diff(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'diff' command."""
+    target_file = Path(args.file).resolve()
+    project_root = find_project_root(target_file, config)
+    engine = RecoveryEngine(project_root, config)
+    success = engine.print_diff(target_file, args.from_id, args.to_id)
+    if not success:
+        sys.exit(1)
+
+def handle_timeline(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'timeline' command."""
+    target_path = Path(args.target).resolve()
+    project_root = find_project_root(target_path, config)
+    engine = RecoveryEngine(project_root, config)
+    engine.print_timeline(target_path)
+
 def handle_config(args: argparse.Namespace, config: Config) -> None:
     """Handle 'config' command."""
     target_dir = Path(args.directory).resolve()
-    # We load config but actually we want to operate on the project's config
-    # wait, the find_project_root handles finding the config path if we want,
-    # but the config is already loaded in main().
-    # If the user specified a directory, the config might be from there.
     if args.action == "show":
         config.show()
     elif args.action == "set":
@@ -343,6 +355,16 @@ Examples:
     restore_project_parser.add_argument("--dry-run", action="store_true", help="Preview what would happen without making changes")
     restore_project_parser.add_argument("-y", "--yes", action="store_true", help="Bypass confirmation prompt")
 
+    # Command: diff
+    diff_parser = subparsers.add_parser("diff", help="Show unified diff between two snapshots")
+    diff_parser.add_argument("file", help="Path to source file")
+    diff_parser.add_argument("--from", dest="from_id", type=int, required=True, help="Snapshot ID to diff from")
+    diff_parser.add_argument("--to", dest="to_id", type=int, required=True, help="Snapshot ID to diff to")
+
+    # Command: timeline
+    timeline_parser = subparsers.add_parser("timeline", help="Show chronological events for a file or directory")
+    timeline_parser.add_argument("target", help="Path to source file or directory")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -384,6 +406,8 @@ Examples:
         "verify": handle_verify,
         "deleted": handle_deleted,
         "restore-project": handle_restore_project,
+        "diff": handle_diff,
+        "timeline": handle_timeline,
     }
 
     handler = commands.get(args.command)

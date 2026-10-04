@@ -85,10 +85,21 @@ class Database:
                 )
             ''')
 
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS renames (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_id      INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                    old_path     TEXT NOT NULL,
+                    new_path     TEXT NOT NULL,
+                    timestamp    TEXT NOT NULL
+                )
+            ''')
+
             conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_file_time ON snapshots(file_id, created_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_blob      ON snapshots(blob_hash)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_time      ON snapshots(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_files_status        ON files(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_renames_file        ON renames(file_id)")
 
     def _migrate_if_needed(self) -> None:
         """Migrate existing metadata.json if it exists."""
@@ -270,13 +281,19 @@ class Database:
             file_row = conn.execute("SELECT id, status FROM files WHERE path = ?", (old_relative_path,)).fetchone()
             if not file_row or file_row["status"] == "deleted":
                 return False
+            
+            file_id = file_row["id"]
                 
             dest_row = conn.execute("SELECT id FROM files WHERE path = ?", (new_relative_path,)).fetchone()
             if dest_row:
                 # If there's already a file at the new path, remove it to allow the rename
                 conn.execute("DELETE FROM files WHERE id = ?", (dest_row["id"],))
                 
-            conn.execute("UPDATE files SET path = ? WHERE id = ?", (new_relative_path, file_row["id"]))
+            conn.execute("UPDATE files SET path = ? WHERE id = ?", (new_relative_path, file_id))
+            
+            now_str = format_timestamp(datetime.now())
+            conn.execute("INSERT INTO renames (file_id, old_path, new_path, timestamp) VALUES (?, ?, ?, ?)",
+                         (file_id, old_relative_path, new_relative_path, now_str))
             return True
 
     def get_snapshots_for_file(self, relative_path: str) -> List[Dict[str, Any]]:
@@ -444,3 +461,75 @@ class Database:
             conn.execute("DELETE FROM snapshots")
             conn.execute("DELETE FROM blobs")
             conn.execute("DELETE FROM files")
+            conn.execute("DELETE FROM renames")
+
+    def get_timeline_events(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            files = conn.execute("SELECT id, path, first_seen, deleted_at FROM files").fetchall()
+            events = []
+            for f in files:
+                events.append({
+                    "timestamp": f["first_seen"],
+                    "event": "CREATED",
+                    "path": f["path"],
+                    "snapshot_id": None,
+                    "file_id": f["id"]
+                })
+                if f["deleted_at"]:
+                    events.append({
+                        "timestamp": f["deleted_at"],
+                        "event": "DELETED",
+                        "path": f["path"],
+                        "snapshot_id": None,
+                        "file_id": f["id"]
+                    })
+
+            snaps = conn.execute("SELECT s.id, s.created_at, s.event_type, f.path, f.id as file_id FROM snapshots s JOIN files f ON s.file_id = f.id").fetchall()
+            for s in snaps:
+                e_type = s["event_type"].upper()
+                if e_type == "CREATION": e_type = "CREATED"
+                elif e_type == "MODIFIED": e_type = "MODIFIED"
+                events.append({
+                    "timestamp": s["created_at"],
+                    "event": e_type,
+                    "path": s["path"],
+                    "snapshot_id": s["id"],
+                    "file_id": s["file_id"]
+                })
+
+            renames = conn.execute("SELECT r.timestamp, r.old_path, r.new_path, r.file_id FROM renames r").fetchall()
+            for r in renames:
+                events.append({
+                    "timestamp": r["timestamp"],
+                    "event": "RENAMED",
+                    "path": f"{r['old_path']} -> {r['new_path']}",
+                    "old_path": r["old_path"],
+                    "new_path": r["new_path"],
+                    "snapshot_id": None,
+                    "file_id": r["file_id"]
+                })
+
+        events.sort(key=lambda x: x["timestamp"])
+
+        dedup = []
+        for ev in events:
+            if not dedup:
+                dedup.append(ev)
+                continue
+            last = dedup[-1]
+            
+            # Merge CREATED events for same file
+            if ev["file_id"] == last["file_id"] and ev["event"] == last["event"] and ev["timestamp"] == last["timestamp"]:
+                if ev["snapshot_id"] and not last["snapshot_id"]:
+                    last["snapshot_id"] = ev["snapshot_id"]
+                continue
+                
+            # Merge CREATED close together (first_seen vs snapshot creation)
+            if ev["file_id"] == last["file_id"] and ev["event"] == "CREATED" and last["event"] == "CREATED":
+                if ev["snapshot_id"] and not last["snapshot_id"]:
+                    last["snapshot_id"] = ev["snapshot_id"]
+                continue
+
+            dedup.append(ev)
+
+        return dedup

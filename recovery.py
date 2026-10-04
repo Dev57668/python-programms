@@ -1060,3 +1060,121 @@ class RecoveryEngine:
             print("\n[OK] Verification complete.")
         
         return missing_count == 0 and corrupt_count == 0
+
+    def print_timeline(self, target_path: Path) -> None:
+        """Print the chronological events for a file or directory."""
+        resolved = Path(target_path).resolve()
+        rel_path = get_relative_path(resolved, self.project_dir)
+        
+        events = self.db.get_timeline_events()
+        
+        filtered = []
+        if rel_path == "." or rel_path == "":
+            filtered = events
+        else:
+            target_p = Path(rel_path)
+            for ev in events:
+                if ev["event"] == "RENAMED":
+                    old_p = Path(ev["old_path"])
+                    new_p = Path(ev["new_path"])
+                    if old_p == target_p or target_p in old_p.parents or new_p == target_p or target_p in new_p.parents:
+                        filtered.append(ev)
+                else:
+                    p = Path(ev["path"])
+                    if p == target_p or target_p in p.parents:
+                        filtered.append(ev)
+                        
+        print("\n" + "=" * 70)
+        if rel_path == "." or rel_path == "":
+            print(f"  Code Lifejacket - Project Timeline")
+        else:
+            print(f"  Code Lifejacket - Timeline for {rel_path}")
+        print("=" * 70)
+        
+        if not filtered:
+            print("No events found.")
+            print("=" * 70 + "\n")
+            return
+            
+        for ev in filtered:
+            ts = ev["timestamp"]
+            event_type = ev["event"]
+            
+            if event_type == "RENAMED":
+                path_str = f"{ev['old_path']} -> {ev['new_path']}"
+            else:
+                path_str = ev["path"]
+                
+            snap_str = f"#{ev['snapshot_id']}" if ev.get("snapshot_id") else ""
+            
+            time_part = ts.split(" ")[1] if " " in ts else ts
+            print(f"{time_part:<10}{event_type:<10}{path_str:<30}{snap_str}")
+            
+        print("=" * 70 + "\n")
+        print("[OK] Timeline generated.")
+
+    def print_diff(self, target_file: Path, from_id: int, to_id: int) -> bool:
+        """Print unified diff between two snapshots."""
+        import difflib
+        resolved = Path(target_file).resolve()
+        relative_path = get_relative_path(resolved, self.project_dir)
+        
+        snaps = self.db.get_snapshots_for_file(relative_path)
+        
+        from_snap = next((s for s in snaps if s["id"] == from_id), None)
+        to_snap = next((s for s in snaps if s["id"] == to_id), None)
+        
+        if not from_snap:
+            print(f"[ERROR] Snapshot #{from_id} not found.")
+            return False
+        if not to_snap:
+            print(f"[ERROR] Snapshot #{to_id} not found.")
+            return False
+            
+        # Verify hashes
+        for snap in (from_snap, to_snap):
+            snap_file = self.project_dir / snap["snapshot_path"]
+            if not snap_file.exists():
+                print(f"[ERROR] Snapshot #{snap['id']} is missing from disk.")
+                return False
+            actual_hash = compute_file_hash(snap_file)
+            if actual_hash != snap["hash"]:
+                print(f"[ERROR] Snapshot #{snap['id']} failed integrity verification.")
+                return False
+                
+        # Read text
+        try:
+            from_text = (self.project_dir / from_snap["snapshot_path"]).read_text(encoding="utf-8").splitlines(keepends=True)
+        except UnicodeDecodeError:
+            print("[ERROR] Unable to diff binary content.")
+            return False
+            
+        try:
+            to_text = (self.project_dir / to_snap["snapshot_path"]).read_text(encoding="utf-8").splitlines(keepends=True)
+        except UnicodeDecodeError:
+            print("[ERROR] Unable to diff binary content.")
+            return False
+            
+        print("\nCODEVAULT - DIFF")
+        print(f"File: {relative_path}")
+        print(f"From: #{from_id} ({from_snap['timestamp']})")
+        print(f"To:   #{to_id} ({to_snap['timestamp']})")
+        print()
+        
+        diff = list(difflib.unified_diff(
+            from_text, to_text,
+            fromfile=f"snapshot #{from_id}",
+            tofile=f"snapshot #{to_id}"
+        ))
+        
+        if not diff:
+            # handle identical cleanly
+            print("--- snapshot #" + str(from_id))
+            print("+++ snapshot #" + str(to_id))
+            print("@@")
+            print(" Identical snapshots.")
+        else:
+            for line in diff:
+                sys.stdout.write(line)
+        print()
+        return True
