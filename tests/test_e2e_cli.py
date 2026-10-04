@@ -86,10 +86,10 @@ class TestCLIEndToEnd(unittest.TestCase):
         self.assertTrue(self.sample_file.exists())
         self.assertIn("# v2", self.sample_file.read_text(encoding="utf-8"))
 
-        # 7. Clean CLI
-        clean_result = self._run_cli("clean", str(self.test_dir), "--yes")
+        # 7. Purge CLI
+        clean_result = self._run_cli("purge", str(self.test_dir), "--yes")
         self.assertEqual(clean_result.returncode, 0)
-        self.assertIn("Cleaned all snapshots", clean_result.stdout)
+        self.assertIn("[OK] Purge complete.", clean_result.stdout)
 
     def test_recover_command_cli(self):
         """Verify python main.py recover <file> interactive command via CLI subprocess."""

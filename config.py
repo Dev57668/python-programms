@@ -21,6 +21,7 @@ class Config:
         "__pycache__", ".lifejacket", ".idea", ".vscode"
     ]
     DEFAULT_MAX_SNAPSHOTS = 50
+    DEFAULT_MAX_AGE_DAYS = 30
     DEFAULT_DEBOUNCE_TIME = 1.0
     DEFAULT_SNAPSHOT_DIR_NAME = ".lifejacket"
     DEFAULT_LOG_LEVEL = "INFO"
@@ -36,6 +37,7 @@ class Config:
         self.monitored_extensions: Set[str] = set(self.DEFAULT_MONITORED_EXTENSIONS)
         self.ignored_directories: Set[str] = set(self.DEFAULT_IGNORED_DIRECTORIES)
         self.max_snapshots: int = self.DEFAULT_MAX_SNAPSHOTS
+        self.max_age_days: int = self.DEFAULT_MAX_AGE_DAYS
         self.debounce_time: float = self.DEFAULT_DEBOUNCE_TIME
         self.snapshot_directory_name: str = self.DEFAULT_SNAPSHOT_DIR_NAME
         self.log_level: str = self.DEFAULT_LOG_LEVEL
@@ -65,6 +67,8 @@ class Config:
                 self.ignored_directories = set(data["ignored_directories"])
             if "max_snapshots" in data:
                 self.max_snapshots = max(1, int(data["max_snapshots"]))
+            if "max_age_days" in data:
+                self.max_age_days = max(1, int(data["max_age_days"]))
             if "debounce_time" in data:
                 self.debounce_time = max(0.1, float(data["debounce_time"]))
             if "snapshot_directory_name" in data:

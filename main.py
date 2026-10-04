@@ -129,7 +129,46 @@ def handle_clean(args: argparse.Namespace, config: Config) -> None:
     target_dir = Path(args.directory).resolve()
     project_root = find_project_root(target_dir, config)
     engine = RecoveryEngine(project_root, config)
-    engine.clean(force=args.yes)
+    engine.clean_retention(dry_run=args.dry_run)
+
+def handle_purge(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'purge' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    engine.purge(force=args.yes)
+
+def handle_pin(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'pin' command."""
+    target_dir = Path(".").resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    target_file = Path(args.file)
+    engine.set_pin(target_file, args.id, True)
+
+def handle_unpin(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'unpin' command."""
+    target_dir = Path(".").resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    target_file = Path(args.file)
+    engine.set_pin(target_file, args.id, False)
+
+def handle_pins(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'pins' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    engine.print_pins()
+
+def handle_verify(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'verify' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    engine = RecoveryEngine(project_root, config)
+    success = engine.verify_snapshots()
+    if not success:
+        sys.exit(1)
 
 
 def handle_deleted(args: argparse.Namespace, config: Config) -> None:
@@ -217,9 +256,32 @@ Examples:
     snaps_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
 
     # Command: clean
-    clean_parser = subparsers.add_parser("clean", help="Purge all snapshots and reset metadata")
+    clean_parser = subparsers.add_parser("clean", help="Perform retention cleanup")
     clean_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
-    clean_parser.add_argument("-y", "--yes", action="store_true", help="Bypass confirmation prompt")
+    clean_parser.add_argument("--dry-run", action="store_true", help="Preview cleanup without making changes")
+
+    # Command: purge
+    purge_parser = subparsers.add_parser("purge", help="DELETE ALL LOCAL CODEVAULT SNAPSHOTS AND METADATA")
+    purge_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+    purge_parser.add_argument("-y", "--yes", action="store_true", help="Bypass confirmation prompt")
+
+    # Command: pin
+    pin_parser = subparsers.add_parser("pin", help="Pin a snapshot to prevent deletion")
+    pin_parser.add_argument("file", help="Path to source file")
+    pin_parser.add_argument("--id", type=int, required=True, help="Snapshot ID to pin")
+
+    # Command: unpin
+    unpin_parser = subparsers.add_parser("unpin", help="Unpin a snapshot")
+    unpin_parser.add_argument("file", help="Path to source file")
+    unpin_parser.add_argument("--id", type=int, required=True, help="Snapshot ID to unpin")
+
+    # Command: pins
+    pins_parser = subparsers.add_parser("pins", help="List all pinned snapshots")
+    pins_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+
+    # Command: verify
+    verify_parser = subparsers.add_parser("verify", help="Verify integrity of all snapshots")
+    verify_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
 
     # Command: deleted
     deleted_parser = subparsers.add_parser("deleted", help="Show previously tracked files that are currently missing")
@@ -255,6 +317,11 @@ Examples:
         "restore": handle_restore,
         "snapshots": handle_snapshots,
         "clean": handle_clean,
+        "purge": handle_purge,
+        "pin": handle_pin,
+        "unpin": handle_unpin,
+        "pins": handle_pins,
+        "verify": handle_verify,
         "deleted": handle_deleted,
         "restore-project": handle_restore_project,
     }

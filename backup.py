@@ -134,7 +134,7 @@ class BackupEngine:
         )
 
         # 8. Enforce snapshot retention limits (prune oldest if exceeded)
-        pruned_records = self.db.prune_old_snapshots(relative_path_str, self.config.max_snapshots)
+        pruned_records = self.db.prune_old_snapshots(relative_path_str, self.config.max_snapshots, self.config.max_age_days)
         for pruned in pruned_records:
             pruned_file = self.project_dir / pruned["snapshot_path"]
             if pruned_file.exists():
@@ -176,7 +176,7 @@ class BackupEngine:
             )
         return deletion_record
 
-    def clean(self) -> None:
+    def purge(self) -> None:
         """Purge all stored snapshots and reset the database."""
         if self.snapshots_dir.exists():
             shutil.rmtree(self.snapshots_dir)

@@ -48,8 +48,10 @@ def json_fixture(tmp_path):
 def assert_same_shape(val1, val2):
     if isinstance(val1, dict):
         assert isinstance(val2, dict)
-        assert set(val1.keys()) == set(val2.keys())
-        for k in val1:
+        v1_keys = set(val1.keys()) - {"pinned"}
+        v2_keys = set(val2.keys()) - {"pinned"}
+        assert v1_keys == v2_keys
+        for k in v1_keys:
             if val1[k] is not None and val2[k] is not None:
                 assert type(val1[k]) == type(val2[k])
     elif isinstance(val1, list):
@@ -102,10 +104,11 @@ def test_differential_api(tmp_path):
     # 5. Get all snapshots
     assert_same_shape(old_db.get_all_snapshots(), new_db.get_all_snapshots())
     
-    # 6. Prune old snapshots
+    # 6. Prune old snapshots - T7 changes behavior of prune to always keep newest snapshot
     old_pruned = old_db.prune_old_snapshots("file2.py", 0)
     new_pruned = new_db.prune_old_snapshots("file2.py", 0)
-    assert_same_shape(old_pruned, new_pruned)
+    # T7: new_pruned is [] because we always preserve newest. old_pruned is not.
+    assert len(new_pruned) == 0
     
     # 7. Clear
     old_db.clear()
@@ -136,7 +139,9 @@ def test_prune_does_not_delete_referenced(tmp_path):
     db.add_snapshot("file.py", "snap1", "hash1", 100)
     db.add_snapshot("file2.py", "snap1", "hash1", 100)
     
-    pruned = db.prune_old_snapshots("file.py", 0)
+    db.add_snapshot("file.py", "snap2", "hash2", 100)
+    
+    pruned = db.prune_old_snapshots("file.py", 1)
     assert len(pruned) == 1
     assert pruned[0]["snapshot_path"] == "/dev/null/do_not_delete"
 

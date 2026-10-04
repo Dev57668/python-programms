@@ -263,7 +263,7 @@ class Database:
         with self._get_connection() as conn:
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -277,7 +277,7 @@ class Database:
         with self._get_connection() as conn:
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -285,6 +285,26 @@ class Database:
             ''').fetchall()
             
             return [dict(row) for row in rows]
+
+    def get_snapshot_by_id(self, snapshot_id: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute('''
+                SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                JOIN blobs b ON s.blob_hash = b.hash
+                WHERE s.id = ?
+            ''', (snapshot_id,)).fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def set_pin_status(self, snapshot_id: int, pinned: bool) -> bool:
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            cursor = conn.execute("UPDATE snapshots SET pinned = ? WHERE id = ?", (1 if pinned else 0, snapshot_id))
+            return cursor.rowcount > 0
 
     def get_tracked_files(self) -> Dict[str, Any]:
         with self._get_connection() as conn:
@@ -332,14 +352,13 @@ class Database:
                 "last_snapshot_path": row["last_snapshot_path"]
             } for row in rows]
 
-    def prune_old_snapshots(self, relative_path: str, max_allowed: int) -> List[Dict[str, Any]]:
+    def prune_old_snapshots(self, relative_path: str, max_allowed: int, max_age_days: int = 30) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             conn.execute("BEGIN EXCLUSIVE")
             
-            # Fetch all snapshots for file ordered by time ascending
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -347,11 +366,38 @@ class Database:
                 ORDER BY s.created_at ASC, s.id ASC
             ''', (relative_path,)).fetchall()
             
-            if len(rows) <= max_allowed:
+            if not rows:
                 return []
                 
-            excess_count = len(rows) - max_allowed
-            to_remove = rows[:excess_count]
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.now() - timedelta(days=max_age_days)
+            
+            # The newest snapshot is the last one in the sorted list
+            newest_id = rows[-1]["id"]
+            
+            to_remove = []
+            
+            # Find removable candidates
+            # When both policies apply, a snapshot is removable only when it is not protected by the newest-snapshot rule and not pinned
+            # 1. Any snapshot older than max_age_days
+            # 2. Any snapshot beyond max_allowed (newest preserved first)
+            
+            # We determine which ones to keep due to max_allowed
+            # The ones to keep are the newest `max_allowed`
+            keep_due_to_count = set(r["id"] for r in rows[-max_allowed:])
+            
+            for row in rows:
+                if row["id"] == newest_id:
+                    continue # Always preserve the newest snapshot
+                if row["pinned"] == 1:
+                    continue # Never delete a pinned snapshot
+                    
+                row_dt = datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+                is_old = row_dt < cutoff_date
+                is_excess = row["id"] not in keep_due_to_count
+                
+                if is_old or is_excess:
+                    to_remove.append(row)
             
             removed_dicts = []
             for row in to_remove:

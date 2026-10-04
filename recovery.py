@@ -82,7 +82,8 @@ class RecoveryEngine:
             size_str = format_size(s.get("size", 0))
             event_type = s.get("event_type", "modified")
             sha_prefix = s.get("hash", "")[:12]
-            print(f"{snap_id:<6}{ts:<22}{size_str:<12}{event_type:<12}{sha_prefix:<16}")
+            pinned_mark = "*" if s.get("pinned", 0) else ""
+            print(f"{snap_id:<6}{ts:<22}{size_str:<12}{event_type:<12}{sha_prefix:<16}{pinned_mark}")
 
         print("=" * 70)
         print(f"To restore a version: python main.py restore {relative_path} --id <ID>\n")
@@ -126,8 +127,9 @@ class RecoveryEngine:
             event_type = s.get("event_type", "modified")
             sha_prefix = s.get("hash", "")[:12]
             snap_id = f"#{s.get('id', '')}"
-            is_latest = " [LATEST]" if idx == total else ""
-            print(f"{idx:<4}{ts:<22}{size_str:<10}{event_type:<11}{sha_prefix:<16}{snap_id:<6}{is_latest}")
+            pinned_mark = "[PINNED] " if s.get("pinned", 0) else ""
+            is_latest = "[LATEST]" if idx == total else ""
+            print(f"{idx:<4}{ts:<22}{size_str:<10}{event_type:<11}{sha_prefix:<16}{snap_id:<6}{pinned_mark}{is_latest}")
 
         print("-" * 76)
         print("[0] Cancel recovery")
@@ -684,9 +686,9 @@ class RecoveryEngine:
 
         print("=" * 80 + "\n")
 
-    def clean(self, force: bool = False) -> bool:
+    def purge(self, force: bool = False) -> bool:
         """
-        Clear all snapshots and metadata with user confirmation.
+        DELETE ALL LOCAL CODEVAULT SNAPSHOTS AND METADATA.
         
         Args:
             force: If True, bypass confirmation prompt.
@@ -695,19 +697,19 @@ class RecoveryEngine:
             True if cleaned, False if cancelled.
         """
         if not force:
-            print(f"\n[Warning] This will permanently remove all snapshots in:")
+            print(f"\n[Warning] This is irreversible and will permanently remove all snapshots in:")
             print(f"          {self.backup_engine.snapshots_dir}")
             try:
                 confirm = input("Are you sure you want to proceed? (y/N): ").strip().lower()
                 if confirm not in ("y", "yes"):
-                    print("Clean cancelled.")
+                    print("[ERROR] Purge cancelled.")
                     return False
             except (EOFError, KeyboardInterrupt):
-                print("\nClean cancelled.")
+                print("\n[ERROR] Purge cancelled.")
                 return False
 
-        self.backup_engine.clean()
-        print("\n[Success] Cleaned all snapshots and reset metadata.")
+        self.backup_engine.purge()
+        print("\n[OK] Purge complete.")
         return True
 
     def print_deleted_files(self) -> None:
@@ -834,3 +836,212 @@ class RecoveryEngine:
         
         print("\n[Success] Project restore completed.")
         return True
+
+    def set_pin(self, target_file: Path, snapshot_id: int, pin: bool) -> None:
+        """Pin or unpin a specific snapshot."""
+        resolved_file = Path(target_file).resolve()
+        relative_path = get_relative_path(resolved_file, self.project_dir)
+        
+        # Verify the file is tracked
+        tracked = self.db.get_tracked_files()
+        if relative_path not in tracked and not any(s['relative_path'] == relative_path for s in self.db.get_all_snapshots()):
+            print(f"[Error] File '{relative_path}' is unknown to CodeVault.")
+            return
+            
+        snapshot = self.db.get_snapshot_by_id(snapshot_id)
+        if not snapshot or snapshot["relative_path"] != relative_path:
+            print(f"[ERROR] Snapshot not found.")
+            return
+            
+        if bool(snapshot.get("pinned", 0)) == pin:
+            print(f"[WARNING] Snapshot #{snapshot_id} is already {'pinned' if pin else 'unpinned'}.")
+            return
+            
+        success = self.db.set_pin_status(snapshot_id, pin)
+        if success:
+            print(f"[OK] Snapshot {'pinned' if pin else 'unpinned'}.")
+        else:
+            print(f"[ERROR] Failed to update pin status for Snapshot #{snapshot_id}.")
+
+    def print_pins(self) -> None:
+        """Display all pinned snapshots."""
+        snapshots = self.db.get_all_snapshots()
+        pinned_snaps = [s for s in snapshots if s.get("pinned", 0) == 1]
+        
+        print("\n" + "=" * 80)
+        print("  CODEVAULT - PINNED SNAPSHOTS")
+        print("=" * 80)
+        
+        if not pinned_snaps:
+            print("No pinned snapshots found.")
+            print("=" * 80 + "\n")
+            return
+            
+        print(f"{'File':<35}{'ID':<6}{'Timestamp':<22}{'Size':<10}{'Hash':<10}{'Pinned':<6}")
+        print("-" * 90)
+        for s in pinned_snaps:
+            file_path = s["relative_path"]
+            snap_id = f"#{s['id']}"
+            ts = s["timestamp"]
+            size_str = format_size(s.get("size", 0))
+            hash_str = s.get("hash", "")[:8]
+            print(f"{file_path:<35}{snap_id:<6}{ts:<22}{size_str:<10}{hash_str:<10}{'Yes':<6}")
+        print("=" * 90 + "\n")
+
+    def clean_retention(self, dry_run: bool = False) -> None:
+        """Perform RETENTION CLEANUP based on max_snapshots and max_age_days."""
+        all_snapshots = self.db.get_all_snapshots()
+        if not all_snapshots:
+            print("No snapshots to clean.")
+            return
+            
+        # Group snapshots by file
+        files_snaps = {}
+        for s in all_snapshots:
+            files_snaps.setdefault(s["relative_path"], []).append(s)
+            
+        removable_ids = []
+        removable_size = 0
+        protected_count = 0
+        total_size_before = sum(s.get("size", 0) for s in all_snapshots)
+        
+        for rel_path, snaps in files_snaps.items():
+            # Prune using the existing database logic, but rollback the transaction so we just get the list
+            # Actually, `prune_old_snapshots` deletes them. We should run it in a transaction and rollback if dry-run?
+            # No, `clean` asks for confirmation first. So we need to calculate WITHOUT deleting!
+            # Let's duplicate the logic here to calculate what would be removed.
+            
+            # Sort by timestamp ascending
+            snaps.sort(key=lambda x: (x["timestamp"], x["id"]))
+            
+            max_allowed = self.config.max_snapshots
+            max_age_days = self.config.max_age_days
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.now() - timedelta(days=max_age_days)
+            
+            newest_id = snaps[-1]["id"]
+            keep_due_to_count = set(s["id"] for s in snaps[-max_allowed:])
+            
+            for s in snaps:
+                if s["id"] == newest_id:
+                    protected_count += 1
+                    continue
+                if s.get("pinned", 0) == 1:
+                    protected_count += 1
+                    continue
+                    
+                s_dt = datetime.strptime(s["timestamp"], "%Y-%m-%d %H:%M:%S")
+                is_old = s_dt < cutoff_date
+                is_excess = s["id"] not in keep_due_to_count
+                
+                if is_old or is_excess:
+                    removable_ids.append(s["id"])
+                    removable_size += s.get("size", 0)
+                else:
+                    protected_count += 1
+
+        snaps_before = len(all_snapshots)
+        snaps_after = snaps_before - len(removable_ids)
+        size_remaining = total_size_before - removable_size
+
+        if dry_run:
+            print("\n" + "=" * 60)
+            print("  Code Lifejacket - Retention Cleanup (DRY RUN)")
+            print("=" * 60)
+            print(f"Snapshots before:   {snaps_before}")
+            print(f"Removable:          {len(removable_ids)}")
+            print(f"Pinned/protected:   {protected_count}")
+            print(f"Snapshots after:    {snaps_after}")
+            print(f"Storage before:     {format_size(total_size_before)}")
+            print(f"Storage recovered:  {format_size(removable_size)}")
+            print(f"Storage remaining:  {format_size(size_remaining)}")
+            print("=" * 60 + "\n")
+            return
+
+        print("\n" + "=" * 60)
+        print("  Code Lifejacket - Retention Cleanup")
+        print("=" * 60)
+        print(f"Snapshots before:   {snaps_before}")
+        print(f"Removable:          {len(removable_ids)}")
+        print(f"Pinned/protected:   {protected_count}")
+        print(f"Snapshots after:    {snaps_after}")
+        print(f"Storage before:     {format_size(total_size_before)}")
+        print(f"Storage recovered:  {format_size(removable_size)}")
+        print(f"Storage remaining:  {format_size(size_remaining)}")
+        print("=" * 60)
+
+        if not removable_ids:
+            print("Nothing to clean.\n")
+            return
+
+        try:
+            confirm = input("Proceed with cleanup? (y/N): ").strip().lower()
+            if confirm not in ("y", "yes"):
+                print("[ERROR] Cleanup cancelled.")
+                return
+        except (EOFError, KeyboardInterrupt):
+            print("\n[ERROR] Cleanup cancelled.")
+            return
+
+        # Perform cleanup safely
+        for rel_path in files_snaps:
+            removed = self.db.prune_old_snapshots(rel_path, self.config.max_snapshots, self.config.max_age_days)
+            for r in removed:
+                if r["snapshot_path"] != "/dev/null/do_not_delete":
+                    disk_path = self.project_dir / r["snapshot_path"]
+                    if disk_path.exists():
+                        try:
+                            disk_path.unlink()
+                        except OSError:
+                            pass
+        
+        print("\n[OK] Cleanup complete.\n")
+
+    def verify_snapshots(self) -> bool:
+        """Verify integrity of all snapshots referenced by the database."""
+        snapshots = self.db.get_all_snapshots()
+        if not snapshots:
+            print("No snapshots to verify.")
+            return True
+            
+        print("\n============================================================")
+        print("CODEVAULT - VERIFY")
+        print("============================================================")
+        
+        valid_count = 0
+        missing_count = 0
+        corrupt_count = 0
+        
+        for s in snapshots:
+            file_path = s["relative_path"]
+            snap_id = f"#{s['id']}"
+            disk_path = self.project_dir / s["snapshot_path"]
+            
+            if not disk_path.exists():
+                print(f"✗ {file_path:<20}{snap_id:<6}MISSING")
+                missing_count += 1
+                continue
+                
+            actual_hash = compute_file_hash(disk_path)
+            expected_hash = s.get("hash")
+            
+            # Compare stored size if available and if it doesn't match, or hash doesn't match
+            expected_size = s.get("size")
+            actual_size = disk_path.stat().st_size if disk_path.exists() else None
+            
+            if actual_hash != expected_hash or (expected_size is not None and actual_size != expected_size):
+                print(f"✗ {file_path:<20}{snap_id:<6}CORRUPTED")
+                corrupt_count += 1
+            else:
+                print(f"✓ {file_path:<20}{snap_id:<6}VALID")
+                valid_count += 1
+                
+        print("\nSummary:")
+        print(f"Valid:      {valid_count}")
+        print(f"Corrupted:  {corrupt_count}")
+        print(f"Missing:    {missing_count}")
+        
+        if missing_count == 0 and corrupt_count == 0:
+            print("\n[OK] Verification complete.")
+        
+        return missing_count == 0 and corrupt_count == 0
