@@ -616,9 +616,14 @@ class RecoveryEngine:
         Clean, readable format compatible with Windows Git Bash.
         """
         data = self.get_status_data()
+        
+        from daemon import DaemonManager
+        dm = DaemonManager(self.project_dir, self.project_dir / self.config.snapshot_directory_name)
+        daemon_info = dm.status()
 
         # Handle console encoding safely for Git Bash and Windows cmd
-        prot_str = data["protection_status"]
+        # Override protection string based on daemon status
+        prot_str = "ACTIVE" if daemon_info["status"] == "RUNNING" else "INACTIVE"
         try:
             prot_str.encode(getattr(sys.stdout, "encoding", "utf-8") or "utf-8")
         except (UnicodeEncodeError, LookupError, AttributeError):
@@ -627,10 +632,20 @@ class RecoveryEngine:
         print("\n" + "=" * 60)
         print("              CODE LIFEJACKET - STATUS")
         print("=" * 60)
+        
+        print("\nProtection:")
+        print(prot_str)
+        
+        print("\nDaemon:")
+        print(daemon_info["status"])
+        
+        if daemon_info["pid"]:
+            print("\nPID:")
+            print(daemon_info["pid"])
+
         print("\nProject:")
         print(f"{data['project_dir']}")
-        print("\nProtection:")
-        print(f"{prot_str}")
+
         print(f"\nProtected Files:       {data['protected_files_count']}")
         print(f"Total Snapshots:       {data['total_snapshots_count']}")
         print(f"Deleted Files:          {data['deleted_files_count']}")

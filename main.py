@@ -191,7 +191,36 @@ def handle_restore_project(args: argparse.Namespace, config: Config) -> None:
     )
     if not success:
         sys.exit(1)
+def handle_start(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'start' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    from daemon import DaemonManager
+    dm = DaemonManager(project_root, project_root / config.snapshot_directory_name)
+    dm.start()
 
+def handle_stop(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'stop' command."""
+    target_dir = Path(args.directory).resolve()
+    project_root = find_project_root(target_dir, config)
+    from daemon import DaemonManager
+    dm = DaemonManager(project_root, project_root / config.snapshot_directory_name)
+    dm.stop()
+
+def handle_config(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'config' command."""
+    target_dir = Path(args.directory).resolve()
+    # We load config but actually we want to operate on the project's config
+    # wait, the find_project_root handles finding the config path if we want,
+    # but the config is already loaded in main().
+    # If the user specified a directory, the config might be from there.
+    if args.action == "show":
+        config.show()
+    elif args.action == "set":
+        config.set_key(args.key, args.value)
+    else:
+        print("[Error] Invalid config action.")
+        sys.exit(1)
 
 def main() -> None:
     """Main CLI command parser and dispatcher."""
@@ -283,6 +312,26 @@ Examples:
     verify_parser = subparsers.add_parser("verify", help="Verify integrity of all snapshots")
     verify_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
 
+    # Command: start
+    start_parser = subparsers.add_parser("start", help="Start the CodeVault watcher daemon")
+    start_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+
+    # Command: stop
+    stop_parser = subparsers.add_parser("stop", help="Stop the CodeVault watcher daemon")
+    stop_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+
+    # Command: config
+    config_parser = subparsers.add_parser("config", help="Manage configuration")
+    config_subparsers = config_parser.add_subparsers(dest="action", required=True, help="Config action")
+    
+    config_show = config_subparsers.add_parser("show", help="Show effective configuration")
+    config_show.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+    
+    config_set = config_subparsers.add_parser("set", help="Set a configuration value")
+    config_set.add_argument("directory", help="Project directory")
+    config_set.add_argument("key", help="Configuration key")
+    config_set.add_argument("value", help="Configuration value")
+
     # Command: deleted
     deleted_parser = subparsers.add_parser("deleted", help="Show previously tracked files that are currently missing")
     deleted_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
@@ -302,6 +351,14 @@ Examples:
 
     # Initialize configuration
     config_path = Path(args.config) if args.config else None
+    
+    # If the user specified a project directory, the config might be located there.
+    # To handle `python main.py config set . key val`, we should use find_project_root
+    # wait, the find_project_root requires config to know the snapshot_directory_name,
+    # so we load config in two passes or just use the local one and then update.
+    # Let's just initialize Config to find the config.json.
+    # Config already looks in its own __file__.parent or the provided path.
+    # For now we keep this behavior for backward compatibility.
     config = Config(config_path)
 
     # Setup logger
@@ -311,6 +368,9 @@ Examples:
     # Dispatch commands
     commands = {
         "watch": handle_watch,
+        "start": handle_start,
+        "stop": handle_stop,
+        "config": handle_config,
         "status": handle_status,
         "history": handle_history,
         "recover": handle_recover,

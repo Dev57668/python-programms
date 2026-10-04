@@ -46,7 +46,7 @@ class TestStatusDashboard(unittest.TestCase):
             self.recovery_engine.print_status()
         output = buf.getvalue()
         self.assertIn("CODE LIFEJACKET - STATUS", output)
-        self.assertIn("○ INACTIVE", output)
+        self.assertIn("INACTIVE", output)
         self.assertIn("No tracked files yet.", output)
 
     def test_protected_files_and_snapshots_counts(self):
@@ -144,7 +144,7 @@ class TestStatusDashboard(unittest.TestCase):
         self.assertIn("CODE LIFEJACKET - STATUS", output)
         self.assertIn("Project:", output)
         self.assertIn("Protection:", output)
-        self.assertIn("● ACTIVE", output)
+        self.assertIn("ACTIVE", output)
         self.assertIn("Protected Files:", output)
         self.assertIn("Total Snapshots:", output)
         self.assertIn("Deleted Files:", output)

@@ -135,5 +135,104 @@ class Config:
             if "/" not in pattern and "\\" not in pattern:
                 if any(fnmatch.fnmatch(part, pattern) for part in rel_path.parts):
                     return True
-                    
         return False
+
+    def save(self) -> None:
+        """Save the current configuration to config.json."""
+        data = {
+            "monitored_extensions": list(self.monitored_extensions),
+            "ignored_directories": list(self.ignored_directories),
+            "max_snapshots": self.max_snapshots,
+            "max_age_days": self.max_age_days,
+            "debounce_time": self.debounce_time,
+            "snapshot_directory_name": self.snapshot_directory_name,
+            "log_level": self.log_level
+        }
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"[Error] Failed to save config to {self.config_path}: {e}")
+
+    def show(self) -> None:
+        """Display the effective configuration."""
+        print("\n" + "=" * 60)
+        print("  Code Lifejacket - Effective Configuration")
+        print("=" * 60)
+        
+        def format_val(current, default):
+            return f"{current} (Default)" if current == default else f"{current} (Custom)"
+            
+        print(f"Extensions:          {format_val(sorted(list(self.monitored_extensions)), sorted(self.DEFAULT_MONITORED_EXTENSIONS))}")
+        print(f"Ignore Patterns:     {format_val(sorted(list(self.ignored_directories)), sorted(self.DEFAULT_IGNORED_DIRECTORIES))}")
+        print(f"Max Snapshots:       {format_val(self.max_snapshots, self.DEFAULT_MAX_SNAPSHOTS)}")
+        print(f"Max Age Days:        {format_val(self.max_age_days, self.DEFAULT_MAX_AGE_DAYS)}")
+        print(f"Debounce Time (s):   {format_val(self.debounce_time, self.DEFAULT_DEBOUNCE_TIME)}")
+        print(f"Snapshot Directory:  {format_val(self.snapshot_directory_name, self.DEFAULT_SNAPSHOT_DIR_NAME)}")
+        print(f"Log Level:           {format_val(self.log_level, self.DEFAULT_LOG_LEVEL)}")
+        print("=" * 60)
+
+    def set_key(self, key: str, value: str) -> bool:
+        """
+        Update a configuration key. 
+        Returns True if successful, False if validation fails.
+        """
+        try:
+            if key == "max_snapshots":
+                val = int(value)
+                if val < 1:
+                    raise ValueError("Must be >= 1")
+                self.max_snapshots = val
+                
+            elif key == "max_age_days":
+                val = int(value)
+                if val < 1:
+                    raise ValueError("Must be >= 1")
+                self.max_age_days = val
+                
+            elif key == "debounce_time" or key == "debounce_ms":
+                # Handle ms or s based on value if it's debounce_ms but let's just parse float
+                val = float(value)
+                if key == "debounce_ms":
+                    val = val / 1000.0
+                if val < 0.1:
+                    raise ValueError("Must be >= 0.1s")
+                self.debounce_time = val
+                
+            elif key == "log_level":
+                val = value.upper()
+                if val not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+                    raise ValueError("Invalid log level")
+                self.log_level = val
+                
+            elif key == "snapshot_directory_name":
+                if not value or "/" in value or "\\" in value:
+                    raise ValueError("Invalid directory name")
+                self.snapshot_directory_name = value
+                
+            elif key == "ignore_patterns" or key == "ignored_directories":
+                # Parse comma-separated list
+                patterns = [p.strip() for p in value.split(",") if p.strip()]
+                if not patterns:
+                    raise ValueError("Cannot be empty")
+                self.ignored_directories = set(patterns)
+                
+            elif key == "monitored_extensions":
+                exts = [p.strip().lower() for p in value.split(",") if p.strip()]
+                if not exts:
+                    raise ValueError("Cannot be empty")
+                # Format to ensure starts with '.'
+                self.monitored_extensions = {ext if ext.startswith(".") else f".{ext}" for ext in exts}
+                
+            else:
+                print(f"[Error] Unsupported configuration key: {key}")
+                return False
+                
+            self.save()
+            print(f"[OK] Set '{key}' to '{value}'")
+            print("Configuration will apply after the next daemon restart.")
+            return True
+            
+        except ValueError as e:
+            print(f"[Error] Invalid value for '{key}': {e}")
+            return False
