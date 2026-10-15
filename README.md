@@ -69,6 +69,56 @@ codevault --help
    codevault recover src/app.py
    ```
 
+## Web Dashboard
+
+Prefer a visual view? Launch the local dashboard:
+
+```bash
+codevault ui .
+```
+
+This opens `http://127.0.0.1:8765` in your browser (use `--port` to change the port, `--no-browser` to skip opening it). It is served by Python's built-in `http.server`, so it adds no dependencies and only listens on localhost.
+
+- **Overview**: protection status, live snapshot feed, activity chart, and a start/stop control for the watcher.
+- **Files**: per-file version history with content preview, diffs (vs previous / vs current), pin/unpin and one-click restore.
+- **Timeline**: every create, modify, rename and delete event, grouped by day.
+- **Recover**: deleted files with a "recover latest" action.
+- **Integrity**: re-hashes every snapshot and shows valid / corrupted / missing results.
+
+The layout adapts from a full sidebar on desktop to an icon rail on laptops and a bottom tab bar on tablets and phones. It supports light/dark themes and keyboard shortcuts (press `?`).
+
+## GitHub & AI Tools
+
+GitHub only has what you pushed. CodeVault has every save. If the project is a git repository, the dashboard's **Git sync** page shows where each version of each file lives:
+
+| Label | Meaning |
+|-------|---------|
+| **On GitHub** | This exact content is in the pushed branch (e.g. `origin/main`). |
+| **Committed, not pushed** | In your local git history only. |
+| **Only on this machine** | Never committed. CodeVault holds the only copy. |
+
+It also lists uncommitted files, commits not yet pushed, and every file with local-only work, with a one-click restore. Git access is read-only; **Check GitHub** runs `git fetch` to refresh the remote branch state.
+
+### Track AI edits (Claude Code)
+
+Claude Code supports hooks, so CodeVault can snapshot a file right **before** and right **after** each AI edit, labelled `claude`:
+
+```bash
+codevault hooks install claude .    # writes .claude/settings.json in this project
+codevault hooks remove claude .     # undo
+```
+
+### Track AI edits (Antigravity and other tools)
+
+The watcher captures every save but can't tell *who* made it. For tools without hooks, take a labelled checkpoint before and after an agent run:
+
+```bash
+codevault snapshot . --source antigravity --note "before agent run"
+codevault snapshot . --source antigravity --note "after agent run"
+```
+
+Labels show up in the dashboard's file history, the timeline's **AI edits** filter, and the Git sync page.
+
 ## Complete CLI Reference
 
 `codevault watch <dir>`
