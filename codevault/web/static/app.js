@@ -31,6 +31,13 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// Skip identical re-renders so polling doesn't steal focus or hover from lists.
+function setHTML(el, html) {
+  if (el._html === html) return;
+  el.innerHTML = html;
+  el._html = html;
+}
+
 const ic = (name, cls = "") => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 function parseTs(ts) {
@@ -81,7 +88,7 @@ const EVENT_ICON = {
 };
 const EVENT_LABEL = {
   CREATED: "created", INITIAL: "initial scan", MODIFIED: "modified", DELETED: "deleted", RENAMED: "renamed",
-  PRE_RESTORE: "pre-restore", AI_EDIT: "AI edit", PRE_AI: "before AI edit", CHECKPOINT: "checkpoint", OTHER: "snapshot",
+  PRE_RESTORE: "saved before restore", AI_EDIT: "AI edit", PRE_AI: "before AI edit", CHECKPOINT: "checkpoint", OTHER: "snapshot",
 };
 
 /* Where a snapshot's content lives: on GitHub, committed locally, or only here. */
@@ -164,10 +171,13 @@ function openModal(title, bodyHtml, { okLabel = "Confirm", cancelLabel = "Cancel
     $("#modal-ok").onclick = () => done(true);
     $("#modal-cancel").onclick = () => done(false);
     modal.onclick = (e) => { if (e.target === modal) done(false); };
+    const input = $("input", modal);
+    if (input) input.focus();
     modal.onkeydown = (e) => {
+      if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); done(true); }
       if (e.key === "Escape") { e.stopPropagation(); done(false); }
       if (e.key === "Tab") { // keep focus inside the dialog
-        const f = $$("button:not([hidden])", modal);
+        const f = $$("input, button:not([hidden])", modal);
         const i = f.indexOf(document.activeElement);
         e.preventDefault();
         f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
@@ -233,7 +243,7 @@ function renderDaemon(o) {
   const running = o.daemon.status === "RUNNING";
   $$("[data-daemon-dot]").forEach((d) => d.classList.toggle("on", running));
   $$("[data-daemon-title]").forEach((d) => { d.textContent = running ? "Watcher running" : "Watcher stopped"; });
-  $$("[data-daemon-sub]").forEach((d) => { d.textContent = running ? `PID ${o.daemon.pid} · saving every change` : "start it to capture new saves"; });
+  $$("[data-daemon-sub]").forEach((d) => { d.textContent = running ? `PID ${o.daemon.pid} · saving every change` : "start it to snapshot new saves"; });
   $$("[data-daemon-btn]").forEach((btn) => {
     if (btn.classList.contains("is-busy")) return;
     btn.disabled = false;
@@ -243,7 +253,7 @@ function renderDaemon(o) {
     const lbl = $(".lbl", btn);
     if (btn.classList.contains("pill-btn")) {
       btn.classList.toggle("on", running);
-      lbl.textContent = running ? "Watching" : "Paused";
+      lbl.textContent = running ? "Watching" : "Stopped";
       return;
     }
     $("use", btn).setAttribute("href", running ? "#i-stop" : "#i-play");
@@ -278,7 +288,7 @@ function renderOverview() {
   $("#hero").classList.toggle("idle", !running);
   $("#hero-status").textContent = running
     ? "Protection active"
-    : s.snapshots ? "Watcher paused · history safe" : "Not protecting yet";
+    : s.snapshots ? "Watcher stopped · snapshots still safe" : "Not protecting yet";
   $("#hero-desc").textContent = running
     ? "Every save is captured, hashed with SHA-256 and stored atomically, so uncommitted work is never lost."
     : s.snapshots
@@ -382,7 +392,7 @@ function evPath(ev) {
 
 function renderFeed(newIds = new Set()) {
   const items = state.timeline.slice(0, 14);
-  $("#feed").innerHTML = items.length
+  setHTML($("#feed"), items.length
     ? items.map((ev) => {
         const c = eventClass(ev.event);
         return `<li class="${newIds.has(ev.snapshot_id) ? "new" : ""}">
@@ -391,7 +401,7 @@ function renderFeed(newIds = new Set()) {
           <time datetime="${esc(ev.timestamp)}" title="${esc(ev.timestamp)}">${ago(ev.timestamp)}</time>
         </li>`;
       }).join("")
-    : `<li><span></span><span class="muted">Nothing yet. Start the watcher and save a file.</span><span></span></li>`;
+    : `<li><span></span><span class="muted">Nothing yet. Start the watcher and save a file.</span><span></span></li>`);
 }
 
 /* ---------------- files ---------------- */
@@ -399,7 +409,7 @@ function renderFeed(newIds = new Set()) {
 function renderFileList() {
   const q = state.fileFilter.toLowerCase();
   const files = state.files.filter((f) => f.path.toLowerCase().includes(q));
-  $("#file-list").innerHTML = files.length
+  setHTML($("#file-list"), files.length
     ? files.map((f) => {
         const [dir, name] = splitPath(f.path);
         const active = f.path === state.selectedPath;
@@ -412,7 +422,7 @@ function renderFileList() {
           ${f.exists ? "" : `<span class="badge bad">deleted</span>`}
         </li>`;
       }).join("")
-    : `<li class="empty">${state.loaded ? `No tracked files${q ? " match" : " yet"}.` : `<span class="sk sk-line"></span>`}</li>`;
+    : `<li class="empty">${state.loaded ? (q ? `No tracked files match “${esc(state.fileFilter)}”.` : "No files tracked yet. Start the watcher to snapshot this project’s source files.") : `<span class="sk sk-line"></span>`}</li>`);
 }
 
 async function selectFile(path, snapId = null) {
@@ -436,7 +446,7 @@ async function loadHistory() {
   try {
     state.history = await api(`/api/history?path=${encodeURIComponent(state.selectedPath)}`);
   } catch (e) {
-    toast("Could not load history", e.message, "err");
+    toast("Couldn’t load this file’s history", e.message, "err");
     return;
   }
   const snaps = state.history.snapshots;
@@ -498,7 +508,7 @@ async function renderViewer() {
   el.innerHTML = `
     <div class="viewer-bar">
       <div class="seg" id="viewer-seg" role="tablist" aria-label="View mode">
-        ${mode("view", "Content")}${mode("prev", "vs previous")}${mode("current", "vs current")}
+        ${mode("view", "Content")}${mode("prev", "What changed")}${mode("current", "vs current file")}
       </div>
       <div class="viewer-actions">
         <button class="btn btn-sm" data-act="pin">${ic("pin")}<span>${snap.pinned ? "Unpin" : "Pin"}</span></button>
@@ -555,10 +565,10 @@ async function restoreSnapshot(snap, path, existsNow) {
   try {
     const r = await api("/api/restore", { id: snap.id });
     toast("File restored", r.message);
-    await refresh();
+    await refreshAfterAction();
     if (state.selectedPath === path) await loadHistory();
   } catch (e) {
-    toast("Restore failed", e.message, "err");
+    toast("Couldn’t restore the file", e.message, "err");
   }
 }
 
@@ -567,7 +577,7 @@ async function restoreSnapshot(snap, path, existsNow) {
 function renderSyncStrip() {
   const el = $("#sync-strip");
   const g = state.git;
-  if (!g) { el.hidden = true; return; }
+  if (!g || g.error) { el.hidden = true; return; }
   el.hidden = false;
   if (!g.is_repo) {
     el.className = "sync-strip";
@@ -580,9 +590,9 @@ function renderSyncStrip() {
   const ok = !risk && !g.ahead && !g.changes.length;
   el.className = `sync-strip ${ok ? "ok" : ""}`;
   const parts = [];
-  if (g.changes.length) parts.push(`${g.changes.length} uncommitted`);
+  if (g.changes.length) parts.push(`${g.changes.length} uncommitted file${g.changes.length === 1 ? "" : "s"}`);
   if (g.ahead) parts.push(`${g.ahead} commit${g.ahead === 1 ? "" : "s"} not pushed`);
-  if (g.behind) parts.push(`${g.behind} behind`);
+  if (g.behind) parts.push(`${g.behind} commit${g.behind === 1 ? "" : "s"} to pull`);
   el.innerHTML = `<span class="s-ico">${ic(ok ? "cloud" : "laptop")}</span>
     <span class="s-text">
       <b>${ok ? "Everything is on GitHub" : risk
@@ -597,8 +607,12 @@ function renderGit() {
   const root = $("#git-root");
   const g = state.git;
   if (!g) return;
+  if (g.error) {
+    setHTML(root, `<div class="card"><div class="git-empty">${ic("alert")}<span>Couldn't read this project's git status: ${esc(g.error)}. Retrying automatically.</span></div></div>`);
+    return;
+  }
   if (!g.is_repo) {
-    root.innerHTML = `<div class="card">
+    setHTML(root, `<div class="card">
       <div class="git-head"><span class="gh-ico">${ic("github")}</span>
         <div class="gh-main"><div class="gh-title">This project isn't a git repository yet</div>
         <div class="gh-sub">CodeVault still protects every save. Connect git to see what's on GitHub.</div></div></div>
@@ -606,7 +620,8 @@ function renderGit() {
         <li>Run <code>git init</code> in the project folder and make a first commit.</li>
         <li>Add your GitHub repo: <code>git remote add origin https://github.com/you/repo.git</code></li>
         <li>Push once with <code>git push -u origin main</code>. This page updates automatically.</li>
-      </ol></div>`;
+      </ol>
+      <button class="btn btn-primary" data-switch-project style="margin-top:14px">${ic("branch")}Open a different project or GitHub repo</button></div>`);
     return;
   }
   const vc = g.version_counts;
@@ -614,9 +629,9 @@ function renderGit() {
   const ghBtn = g.web_url
     ? `<a class="btn btn-sm" href="${esc(g.web_url)}" target="_blank" rel="noopener noreferrer">${ic("github")}Open on GitHub</a>` : "";
   const pills = [
-    g.upstream ? `<span class="sync-pill ${g.ahead ? "warn" : "good"}">${ic("upload")}${g.ahead} to push</span>` : `<span class="sync-pill warn">${ic("alert")}no upstream branch</span>`,
-    g.upstream ? `<span class="sync-pill ${g.behind ? "warn" : ""}">${ic("download")}${g.behind} to pull</span>` : "",
-    `<span class="sync-pill ${g.changes.length ? "warn" : "good"}">${ic("edit")}${g.changes.length} uncommitted</span>`,
+    g.upstream ? `<span class="sync-pill ${g.ahead ? "warn" : "good"}">${ic("upload")}${g.ahead} commit${g.ahead === 1 ? "" : "s"} to push</span>` : `<span class="sync-pill warn">${ic("alert")}no upstream branch</span>`,
+    g.upstream ? `<span class="sync-pill ${g.behind ? "warn" : ""}">${ic("download")}${g.behind} commit${g.behind === 1 ? "" : "s"} to pull</span>` : "",
+    `<span class="sync-pill ${g.changes.length ? "warn" : "good"}">${ic("edit")}${g.changes.length} uncommitted file${g.changes.length === 1 ? "" : "s"}</span>`,
   ].join("");
 
   const riskHtml = g.at_risk.length
@@ -626,22 +641,24 @@ function renderGit() {
           <div style="min-width:0">
             <div class="r-path" title="${esc(r.path)}">${esc(r.path)}</div>
             <div class="r-meta">
-              <span>${r.local_versions} local-only version${r.local_versions === 1 ? "" : "s"} · newest ${esc(ago(r.latest_ts))}</span>
+              <span>${r.local_versions} snapshot${r.local_versions === 1 ? "" : "s"} not in git · latest ${esc(ago(r.latest_ts))}</span>
               ${r.sources.map((src) => srcBadge(src)).join("")}
               ${r.git ? gitLetter(r.git) : ""}
               ${r.exists ? "" : `<span class="badge bad">deleted</span>`}
             </div>
           </div>
           <div class="r-actions">
-            <button class="btn btn-sm" data-open="${esc(r.path)}" data-snap="${r.latest_id}">${ic("timeline")}Versions</button>
+            <button class="btn btn-sm" data-open="${esc(r.path)}" data-snap="${r.latest_id}">${ic("timeline")}History</button>
             ${r.exists ? "" : `<button class="btn btn-sm btn-primary" data-recover="${esc(r.path)}" data-id="${r.latest_id}">${ic("restore")}Recover</button>`}
           </div>
         </li>`).join("")}</ul>`
-    : `<div class="git-empty">${ic("check")}Every saved version is committed. Nothing exists only on this machine.</div>`;
+    : vc.pushed + vc.committed
+      ? `<div class="git-empty">${ic("check")}Every snapshot is committed to git. Nothing exists only on this machine.</div>`
+      : `<div class="git-empty">${ic("clock")}No snapshots yet. Start the watcher or take a checkpoint, then compare them with GitHub here.</div>`;
 
   const changesHtml = g.changes.length
     ? `<ul class="plain-list">${g.changes.map((c) => `<li>${gitLetter(c.status)}<span class="mono grow" title="${esc(c.path)}">${esc(c.path)}</span>
-        ${c.tracked ? `<button class="link" data-open="${esc(c.path)}">history</button>` : `<span class="muted small">not watched</span>`}</li>`).join("")}</ul>`
+        ${c.tracked ? `<button class="link" data-open="${esc(c.path)}">History</button>` : `<span class="muted small">not watched</span>`}</li>`).join("")}</ul>`
     : `<div class="git-empty">${ic("check")}Working tree clean.</div>`;
 
   const commitsHtml = g.unpushed_commits.length
@@ -649,7 +666,7 @@ function renderGit() {
         <span class="grow" title="${esc(c.subject)}">${esc(c.subject)}</span><time>${esc(ago(c.date.slice(0, 19)))}</time></li>`).join("")}</ul>`
     : `<div class="git-empty">${ic("check")}${g.upstream ? "All commits are pushed." : "Set an upstream with git push -u to track this."}</div>`;
 
-  root.innerHTML = `
+  setHTML(root, `
     <div class="card">
       <div class="git-head">
         <span class="gh-ico">${ic(g.web_url ? "github" : "branch")}</span>
@@ -661,38 +678,79 @@ function renderGit() {
         <div class="gh-actions">
           <button class="btn btn-sm" id="git-fetch">${ic("refresh")}<span class="lbl">Check GitHub</span></button>
           ${ghBtn}
+          <button class="btn btn-sm" data-switch-project>${ic("branch")}Connect another repo</button>
         </div>
       </div>
       <div class="lanes">
         <div class="lane" data-tone="green"><div class="l-top"><span class="l-ico">${ic("cloud")}</span><span class="l-name">On GitHub</span></div>
-          <div class="l-num">${vc.pushed}</div><p>versions safe in the pushed branch</p></div>
+          <div class="l-num">${vc.pushed}</div><p>snapshots whose exact content is pushed</p></div>
         <div class="lane" data-tone="cyan"><div class="l-top"><span class="l-ico">${ic("commit")}</span><span class="l-name">Committed, not pushed</span></div>
-          <div class="l-num">${vc.committed}</div><p>in local git history only</p></div>
+          <div class="l-num">${vc.committed}</div><p>snapshots committed only on this machine</p></div>
         <div class="lane" data-tone="amber"><div class="l-top"><span class="l-ico">${ic("laptop")}</span><span class="l-name">Only on this machine</span></div>
-          <div class="l-num">${vc.local}</div><p>never committed. CodeVault is the only copy</p></div>
+          <div class="l-num">${vc.local}</div><p>snapshots never committed to git</p></div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-head"><h3>Work that exists only here</h3><span class="muted small">restore these if you lose local changes</span></div>
+      <div class="card-head"><h3>Work not in git yet</h3><span class="muted small">commit it, or restore it from here if local changes are lost</span></div>
       ${riskHtml}
     </div>
 
     <div class="git-cols">
       <div class="card"><div class="card-head"><h3>Uncommitted changes</h3><span class="muted small">git status</span></div>${changesHtml}</div>
       <div class="card"><div class="card-head"><h3>Commits not pushed</h3><span class="muted small">${g.upstream ? esc(`${g.upstream}..HEAD`) : ""}</span></div>${commitsHtml}</div>
-    </div>`;
+    </div>`);
+}
+
+async function switchProject() {
+  let recent = [];
+  try { recent = (await api("/api/projects")).recent; } catch { /* offline: just show the input */ }
+  const current = state.overview?.project_dir;
+  const ok = await openModal("Open a project", `
+    <p class="muted" style="margin:0 0 12px">Enter a folder on this computer, or paste a GitHub URL to clone it into <code>~/Documents</code>.</p>
+    <label class="search" style="margin:0"><span class="sr-only">Folder path or GitHub URL</span>
+      <input id="project-input" placeholder="~/Documents/my-app  or  https://github.com/you/repo" autocomplete="off" spellcheck="false"></label>
+    ${recent.filter((p) => p !== current).length ? `<div class="muted small" style="margin:14px 0 6px">Recent</div>
+      <ul class="plain-list">${recent.filter((p) => p !== current).map((p) =>
+        `<li><button class="link" data-pick="${esc(p)}" title="${esc(p)}">${esc(shortPath(p))}</button></li>`).join("")}</ul>` : ""}`,
+    { okLabel: "Open" });
+  if (!ok) return;
+  const target = $("#project-input").value.trim();
+  if (!target) return;
+  const isUrl = /github\.com[:/]/.test(target);
+  toast(isUrl ? "Cloning repository…" : "Opening project…", isUrl ? "Large repositories can take a minute." : target, "info");
+  try {
+    const r = await api("/api/project", { target });
+    await Promise.all([inflight, gitInflight]);
+    Object.assign(state, {
+      overview: null, files: [], timeline: [], deleted: [], git: null, maxSnapId: null,
+      selectedPath: null, history: null, selectedSnapId: null, loaded: false,
+    });
+    Object.keys(shownStats).forEach((k) => delete shownStats[k]);
+    $("#files-split").classList.remove("show-detail");
+    $("#file-detail").innerHTML = `<div class="empty-state"><span class="empty-ico">${ic("files")}</span><p>Select a file to browse its snapshot history, compare versions and restore.</p></div>`;
+    $("#verify-result").innerHTML = "";
+    setHTML($("#git-root"), `<div class="card"><span class="sk sk-line"></span></div>`);
+    await refresh();
+    if (state.view === "git") renderGit();
+    toast(r.cloned ? "Repository cloned" : "Project opened", r.project_dir);
+  } catch (e) {
+    toast("Couldn’t open the project", e.message, "err");
+  }
 }
 
 async function gitFetch(btn) {
   setBusy(btn, true, "Checking…");
   try {
     await api("/api/git/fetch", {});
-    toast("Up to date with GitHub", "Fetched the latest remote branch state");
-    await refresh();
+    toast("Checked GitHub", "Push and pull counts now match the remote branch.");
   } catch (e) {
-    toast("Could not reach GitHub", e.message, "err");
+    toast("Couldn’t reach GitHub", e.message, "err");
+  } finally {
+    // setHTML may keep this exact button, so clear its busy state explicitly.
     setBusy(btn, false, "Check GitHub");
+    await gitInflight;
+    await refreshGit();
   }
 }
 
@@ -709,7 +767,7 @@ function renderTimeline() {
     return c === f;
   });
   if (!evs.length) {
-    $("#timeline").innerHTML = `<li class="muted" style="padding:12px 4px">No events to show.</li>`;
+    setHTML($("#timeline"), `<li class="muted" style="padding:12px 4px">${f === "ALL" ? "No events yet. Start the watcher and save a file." : "No events match this filter."}</li>`);
     return;
   }
   let html = "";
@@ -727,24 +785,27 @@ function renderTimeline() {
       ${ev.snapshot_id ? `<button class="link" data-open="${esc(target)}" data-snap="${ev.snapshot_id}" aria-label="Open snapshot ${ev.snapshot_id}">#${ev.snapshot_id}</button>` : "<span></span>"}
     </li>`;
   }
-  $("#timeline").innerHTML = html;
+  setHTML($("#timeline"), html);
 }
 
 /* ---------------- deleted ---------------- */
 
 function renderDeleted() {
   const list = state.deleted;
-  $("#deleted-list").innerHTML = list.length
-    ? list.map((d) => `
-      <div class="del-card">
-        <div class="del-top">${evIco("DELETED")}<span class="fname">${esc(d.path)}</span></div>
-        <div class="meta">Deleted ${esc(ago(d.deleted_at))} · ${d.snapshots} snapshot${d.snapshots === 1 ? "" : "s"} available</div>
-        <div class="actions">
-          ${d.latest_id ? `<button class="btn btn-sm btn-primary" data-recover="${esc(d.path)}" data-id="${d.latest_id}">${ic("restore")}Recover latest</button>` : ""}
-          <button class="btn btn-sm" data-open="${esc(d.path)}">${ic("timeline")}Browse versions</button>
+  setHTML($("#deleted-list"), list.length
+    ? `<ul class="risk-list">${list.map((d) => `
+      <li>
+        ${evIco("DELETED")}
+        <div style="min-width:0">
+          <div class="r-path" title="${esc(d.path)}">${esc(d.path)}</div>
+          <div class="r-meta">Deleted ${esc(ago(d.deleted_at))} · ${d.snapshots} snapshot${d.snapshots === 1 ? "" : "s"} available</div>
         </div>
-      </div>`).join("")
-    : `<div class="celebrate"><span class="empty-ico">${ic("integrity")}</span><b>Nothing to recover</b><span>Every tracked file is present on disk. Try deleting one, then come back.</span></div>`;
+        <div class="r-actions">
+          <button class="btn btn-sm" data-open="${esc(d.path)}">${ic("timeline")}History</button>
+          ${d.latest_id ? `<button class="btn btn-sm btn-primary" data-recover="${esc(d.path)}" data-id="${d.latest_id}">${ic("restore")}Recover latest</button>` : ""}
+        </div>
+      </li>`).join("")}</ul>`
+    : `<div class="celebrate"><span class="empty-ico">${ic("integrity")}</span><b>Nothing to recover</b><span>Every file CodeVault tracks is still on disk. If one is deleted, it appears here with a Recover button.</span></div>`);
 }
 
 /* ---------------- integrity ---------------- */
@@ -756,10 +817,13 @@ async function runVerify() {
     const r = await api("/api/verify", {});
     const c = r.counts;
     $("#verify-result").innerHTML = `
-      <div class="verify-summary">
-        <div class="stat" data-tone="green"><div class="stat-label">Valid</div><div class="stat-value">${c.valid}</div></div>
-        <div class="stat" data-tone="violet"><div class="stat-label">Corrupted</div><div class="stat-value" style="color:var(--red)">${c.corrupted}</div></div>
-        <div class="stat" data-tone="amber"><div class="stat-label">Missing</div><div class="stat-value">${c.missing}</div></div>
+      <div class="lanes verify-summary">
+        <div class="lane" data-tone="green"><div class="l-top"><span class="l-ico">${ic("check")}</span><span class="l-name">Valid</span></div>
+          <div class="l-num">${c.valid}</div><p>hash matches the database</p></div>
+        <div class="lane" data-tone="red"><div class="l-top"><span class="l-ico">${ic("alert")}</span><span class="l-name">Corrupted</span></div>
+          <div class="l-num">${c.corrupted}</div><p>content changed on disk</p></div>
+        <div class="lane" data-tone="amber"><div class="l-top"><span class="l-ico">${ic("trash")}</span><span class="l-name">Missing</span></div>
+          <div class="l-num">${c.missing}</div><p>snapshot file not found</p></div>
       </div>
       <div class="verify-grid" role="list" aria-label="Per-snapshot results">${r.results.map((x, i) =>
         `<span role="listitem" class="cell ${x.state}" style="animation-delay:${Math.min(i * 14, 1500)}ms" title="#${x.id} ${esc(x.path)} · ${x.state}" aria-label="Snapshot ${x.id} ${esc(x.path)} ${x.state}"></span>`).join("")}</div>
@@ -767,7 +831,7 @@ async function runVerify() {
         ? r.ok ? `All ${c.valid} snapshots match their recorded SHA-256 hashes.` : "Some snapshots failed verification and will not be restored."
         : "No snapshots to verify yet."}</span></div>`;
   } catch (e) {
-    toast("Verification failed", e.message, "err");
+    toast("Couldn’t run verification", e.message, "err");
   } finally {
     setBusy(btn, false, "Run verification");
   }
@@ -790,20 +854,54 @@ function renderSettings() {
 
 /* ---------------- polling ---------------- */
 
+// A single failed poll (e.g. a request aborted mid-navigation) isn't a lost connection.
+let failedPolls = 0;
 function setOnline(on) {
+  failedPolls = on ? 0 : failedPolls + 1;
+  if (!on && failedPolls < 2) return;
   if (state.online === on) return;
   state.online = on;
   const live = $("#live-indicator");
   live.classList.toggle("off", !on);
   $(".lbl", live).textContent = on ? "Live" : "Offline";
-  if (!on) toast("Lost connection to CodeVault", "Is `codevault ui` still running?", "err");
+  if (!on) toast("Can’t reach the dashboard server", "Check that codevault ui is still running in your terminal.", "err");
 }
 
-async function refresh() {
+// One refresh at a time; callers share the in-flight one instead of stacking requests.
+let inflight = null;
+let gitInflight = null;
+function refresh() {
+  if (!inflight) inflight = doRefresh().finally(() => { inflight = null; });
+  return inflight;
+}
+
+// After a user action: let any poll sent before the action land, then fetch fresh data.
+async function refreshAfterAction() {
+  await Promise.all([inflight, gitInflight]);
+  await Promise.all([refresh(), refreshGit()]);
+}
+
+// Git is loaded on its own: the first `git log` on a big repo can take seconds.
+function refreshGit() {
+  if (!gitInflight) {
+    gitInflight = api("/api/git")
+      .then((git) => { state.git = git; })
+      .catch((e) => { state.git = { error: e.message }; })
+      .finally(() => {
+        gitInflight = null;
+        renderSyncStrip();
+        $$('[data-count="git"]').forEach((c) => { c.textContent = state.git?.at_risk?.length || ""; });
+        if (state.view === "git" && !$("#git-root .is-busy")) renderGit();
+      });
+  }
+  return gitInflight;
+}
+
+async function doRefresh() {
+  refreshGit();
   try {
-    const [overview, files, timeline, deleted, git] = await Promise.all([
+    const [overview, files, timeline, deleted] = await Promise.all([
       api("/api/overview"), api("/api/files"), api("/api/timeline"), api("/api/deleted"),
-      api("/api/git").catch(() => null),
     ]);
     setOnline(true);
 
@@ -825,14 +923,10 @@ async function refresh() {
     state.files = files;
     state.timeline = timeline;
     state.deleted = deleted;
-    state.git = git;
     state.loaded = true;
     renderOverview();
     renderFeed(newIds);
     renderFileList();
-    renderSyncStrip();
-    $$('[data-count="git"]').forEach((c) => { c.textContent = git?.at_risk?.length || ""; });
-    if (state.view === "git" && !$("#git-root .is-busy")) renderGit();
     if (state.view === "timeline") renderTimeline();
     if (state.view === "deleted") renderDeleted();
   } catch {
@@ -920,10 +1014,10 @@ $("#file-detail").addEventListener("click", (e) => {
     setBusy(act, true);
     api("/api/pin", { id: snap.id, pinned: !snap.pinned })
       .then((r) => {
-        toast(r.pinned ? "Snapshot pinned" : "Snapshot unpinned", `#${snap.id} ${r.pinned ? "is protected from retention cleanup" : "follows retention rules again"}`);
-        loadHistory(); refresh();
+        toast(r.pinned ? "Snapshot pinned" : "Snapshot unpinned", r.pinned ? `#${snap.id} won’t be removed by retention cleanup.` : `#${snap.id} can be removed by retention cleanup again.`);
+        loadHistory(); refreshAfterAction();
       })
-      .catch((err) => { toast("Pin failed", err.message, "err"); setBusy(act, false); });
+      .catch((err) => { toast(snap.pinned ? "Couldn’t unpin the snapshot" : "Couldn’t pin the snapshot", err.message, "err"); setBusy(act, false); });
   }
 });
 $("#file-detail").addEventListener("keydown", (e) => {
@@ -946,6 +1040,10 @@ $("#timeline-filter").addEventListener("click", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+  const sw = e.target.closest("[data-switch-project]");
+  if (sw) { switchProject(); return; }
+  const pick = e.target.closest("[data-pick]");
+  if (pick) { $("#project-input").value = pick.dataset.pick; $("#modal-ok").click(); return; }
   const go = e.target.closest("[data-goto]");
   if (go) { show(go.dataset.goto, { focus: true }); return; }
   const fetchBtn = e.target.closest("#git-fetch");
@@ -958,7 +1056,7 @@ document.addEventListener("click", (e) => {
     api(`/api/history?path=${encodeURIComponent(path)}`).then((h) => {
       const snap = h.snapshots.find((s) => s.id === Number(r.dataset.id));
       if (snap) restoreSnapshot(snap, path, h.exists);
-    }).catch((err) => toast("Could not load history", err.message, "err"));
+    }).catch((err) => toast("Couldn’t load this file’s history", err.message, "err"));
   }
 });
 
@@ -971,13 +1069,14 @@ $$("[data-daemon-btn]").forEach((btn) => btn.addEventListener("click", async () 
   all.forEach((b) => setBusy(b, true, action === "start" ? "Starting…" : "Stopping…"));
   try {
     const r = await api("/api/daemon", { action });
-    toast(action === "start" ? "Watcher started" : "Watcher stopped", r.message.split("\n").pop());
+    toast(action === "start" ? "Watcher started" : "Watcher stopped",
+      action === "start" ? "Every save in this project is now snapshotted." : "Existing snapshots stay restorable.");
   } catch (err) {
-    toast("Watcher error", err.message, "err");
+    toast(action === "start" ? "Couldn't start the watcher" : "Couldn't stop the watcher", err.message, "err");
   } finally {
     all.forEach((b) => b.classList.remove("is-busy"));
     // the daemon takes a moment to scan existing files
-    await refresh();
+    await refreshAfterAction();
     setTimeout(refresh, 1200);
   }
 }));

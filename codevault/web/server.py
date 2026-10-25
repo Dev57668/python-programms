@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 from codevault.config import Config
 from codevault.daemon import DaemonManager
-from codevault.gitinfo import LOCAL, GitRepo
+from codevault.gitinfo import LOCAL, GitRepo, clone, github_web_url
 from codevault.recovery import RecoveryEngine
 from codevault.utils import compute_file_hash, format_size
 
@@ -60,26 +60,46 @@ def _captured(func, *args, **kwargs) -> Tuple[Any, str]:
     return result, buf.getvalue().strip()
 
 
+def _restore_error(output: str) -> str:
+    """Turn RecoveryEngine's CLI output into a message for the dashboard (no CLI hints)."""
+    first = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    if "integrity" in first.lower():
+        return "This snapshot failed its integrity check, so nothing was restored. Run Integrity to see which snapshots are affected."
+    first = first.replace("[Error]", "").replace("[Safety Alert]", "").strip()
+    return first or "Couldn't restore the file. Check that the project folder is writable."
+
+
 class DashboardApi:
     """JSON API backed by the CodeVault recovery engine for one project."""
 
     def __init__(self, project_dir: Path, config: Config):
-        self.project_dir = Path(project_dir).resolve()
         self.config = config
-        self.engine = RecoveryEngine(self.project_dir, config)
-        self.db = self.engine.db
-        self.daemon = DaemonManager(
-            self.project_dir, self.project_dir / config.snapshot_directory_name
-        )
         # Serialises mutating operations; reads go straight to SQLite.
         self.lock = threading.Lock()
-        self._git: Optional[GitRepo] = None
-        self._git_checked = 0.0
+        self.recent: List[str] = []
+        self._open(Path(project_dir))
         # Watcher daemons started from the dashboard are our children; reap
         # them when they exit so stop() doesn't see a lingering zombie PID.
         self._children: set = set()
         if os.name != "nt":
             threading.Thread(target=self._reap_children, daemon=True).start()
+
+    def _open(self, project_dir: Path) -> None:
+        """Point the dashboard at a project directory."""
+        self.project_dir = Path(project_dir).resolve()
+        self.engine = RecoveryEngine(self.project_dir, self.config)
+        self.db = self.engine.db
+        self.daemon = DaemonManager(
+            self.project_dir, self.project_dir / self.config.snapshot_directory_name
+        )
+        self._git: Optional[GitRepo] = None
+        self._git_checked = 0.0
+        repo = self._repo()
+        if repo:
+            # Keep CodeVault's storage out of the user's commits (local-only, never pushed).
+            repo.exclude(self.config.snapshot_directory_name)
+        path = str(self.project_dir)
+        self.recent = [path] + [p for p in self.recent if p != path][:7]
 
     def _reap_children(self) -> None:
         while True:
@@ -126,13 +146,13 @@ class DashboardApi:
         except (TypeError, ValueError):
             raise ApiError("Invalid snapshot id")
         if not snap:
-            raise ApiError("Snapshot not found", HTTPStatus.NOT_FOUND)
+            raise ApiError("This snapshot no longer exists. Retention cleanup may have removed it.", HTTPStatus.NOT_FOUND)
         return snap
 
     def _read_snapshot_text(self, snap: Dict[str, Any]) -> Optional[str]:
         path = self.project_dir / snap["snapshot_path"]
         if not path.is_file():
-            raise ApiError(f"Snapshot #{snap['id']} is missing from disk", HTTPStatus.GONE)
+            raise ApiError(f"Snapshot #{snap['id']}'s stored copy is missing, so it can't be shown or restored. Run Integrity to check the others.", HTTPStatus.GONE)
         data = path.read_bytes()[:MAX_PREVIEW_BYTES]
         try:
             return data.decode("utf-8")
@@ -142,7 +162,7 @@ class DashboardApi:
     def _tracked_path(self, rel_path: str) -> Path:
         """Resolve a tracked relative path, refusing anything outside the project."""
         if rel_path not in self.db.get_tracked_files():
-            raise ApiError("File is not tracked by CodeVault", HTTPStatus.NOT_FOUND)
+            raise ApiError("CodeVault isn't tracking this file.", HTTPStatus.NOT_FOUND)
         target = (self.project_dir / rel_path).resolve()
         if self.project_dir not in target.parents:
             raise ApiError("Path escapes project directory", HTTPStatus.FORBIDDEN)
@@ -242,7 +262,7 @@ class DashboardApi:
         if to == "current":
             current = self.project_dir / old["relative_path"]
             if not current.is_file():
-                raise ApiError("File no longer exists on disk", HTTPStatus.NOT_FOUND)
+                raise ApiError("The file isn't on disk anymore, so there's no current version to compare with. Use What changed instead.", HTTPStatus.NOT_FOUND)
             try:
                 new_text = current.read_bytes()[:MAX_PREVIEW_BYTES].decode("utf-8")
             except UnicodeDecodeError:
@@ -255,7 +275,7 @@ class DashboardApi:
             new_text = self._read_snapshot_text(new)
             new_label = f"#{new['id']}"
         if old_text is None or new_text is None:
-            raise ApiError("Unable to diff binary content")
+            raise ApiError("This is a binary file, so a line-by-line comparison isn't available.")
 
         lines = []
         added = removed = 0
@@ -362,7 +382,7 @@ class DashboardApi:
                 interactive=False,
             )
         if not ok:
-            raise ApiError(output or "Restore failed", HTTPStatus.INTERNAL_SERVER_ERROR)
+            raise ApiError(_restore_error(output), HTTPStatus.INTERNAL_SERVER_ERROR)
         return {"ok": True, "message": f"Restored {snap['relative_path']} from snapshot #{snap['id']}"}
 
     def pin(self, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -389,10 +409,36 @@ class DashboardApi:
     def git_fetch(self, _body: Dict[str, Any]) -> Dict[str, Any]:
         repo = self._repo()
         if not repo:
-            raise ApiError("This project is not a git repository")
+            raise ApiError("This project isn't a git repository, so there's nothing to check on GitHub.")
         if not repo.fetch():
-            raise ApiError("git fetch failed. Check your network and that the remote is reachable", HTTPStatus.BAD_GATEWAY)
+            raise ApiError("Couldn't fetch from the remote. Check your internet connection and that you can access the repository.", HTTPStatus.BAD_GATEWAY)
         return {"ok": True}
+
+    def open_project(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Switch to a local folder, or clone a GitHub repository and switch to it."""
+        target = str(body.get("target") or "").strip()
+        if not target:
+            raise ApiError("Enter a folder path or a GitHub URL")
+        web = github_web_url(target)
+        if web:
+            name = web.rsplit("/", 1)[-1]
+            dest = Path.home() / "Documents" / name
+            if dest.exists():
+                if GitRepo(dest).summary().get("web_url") != web:
+                    raise ApiError(f"{dest} already exists and isn't a clone of this repository. Move or rename that folder, or open it by its path.", HTTPStatus.CONFLICT)
+            elif not clone(target, dest):
+                raise ApiError("Couldn't clone the repository. Check the URL, and for a private repository make sure git is signed in to GitHub on this computer.", HTTPStatus.BAD_GATEWAY)
+            path = dest
+        else:
+            path = Path(target).expanduser()
+            if not path.is_dir():
+                raise ApiError(f"There's no folder at {path}. Check the path and try again.", HTTPStatus.NOT_FOUND)
+        with self.lock:
+            self._open(path)
+        return {"ok": True, "project_dir": str(self.project_dir), "cloned": bool(web)}
+
+    def projects(self, _q: Dict[str, str]) -> Dict[str, Any]:
+        return {"current": str(self.project_dir), "recent": self.recent}
 
     def daemon_action(self, body: Dict[str, Any]) -> Dict[str, Any]:
         action = body.get("action")
@@ -416,6 +462,7 @@ def make_handler(api: DashboardApi):
         "/api/timeline": api.timeline,
         "/api/deleted": api.deleted,
         "/api/git": api.git,
+        "/api/projects": api.projects,
     }
     post_routes = {
         "/api/restore": api.restore,
@@ -423,6 +470,7 @@ def make_handler(api: DashboardApi):
         "/api/verify": api.verify,
         "/api/daemon": api.daemon_action,
         "/api/git/fetch": api.git_fetch,
+        "/api/project": api.open_project,
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -443,6 +491,8 @@ def make_handler(api: DashboardApi):
         def _run(self, func, arg) -> None:
             try:
                 self._send_json(func(arg))
+            except ConnectionError:
+                pass  # the browser closed the request (e.g. navigated away)
             except ApiError as e:
                 self._send_json({"error": str(e)}, e.status)
             except Exception as e:  # surface unexpected errors to the UI

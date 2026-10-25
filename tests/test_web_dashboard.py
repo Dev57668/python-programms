@@ -110,6 +110,16 @@ class TestDashboardApi(unittest.TestCase):
         self.assertIn("error", body)
 
 
+class TestRestoreErrorMessage(unittest.TestCase):
+    """CLI output from a failed restore becomes a dashboard message without CLI hints."""
+
+    def test_messages(self):
+        from codevault.web.server import _restore_error
+        self.assertIn("integrity check", _restore_error("\n[Error] Snapshot integrity verification failed!\n  Expected: x"))
+        self.assertEqual(_restore_error("\n[Error] Snapshot file missing on disk: /a/b\n"), "Snapshot file missing on disk: /a/b")
+        self.assertTrue(_restore_error(""))
+
+
 class TestStaleDeleteEvent(unittest.TestCase):
     """A delete event for a path that still exists must not mark it deleted."""
 

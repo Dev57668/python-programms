@@ -60,6 +60,7 @@
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L3 9"/><path d="M3 4v5h5"/><path d="M4 13a8 8 0 0 0 14.5 4.5L21 15"/><path d="M21 20v-5h-5"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
       <symbol id="i-github" viewBox="0 0 24 24"><path class="fill" d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
       <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
     </defs>
   </svg>
@@ -125,8 +126,8 @@
     <main class="main" id="main" tabindex="-1">
       <header class="topbar">
         <div class="topbar-text">
-          <div class="eyebrow">Protected project</div>
-          <h1 id="project-name"><span class="sk sk-title"></span></h1>
+          <div class="title-row"><h1 id="project-name"><span class="sk sk-title"></span></h1>
+            <button class="btn btn-sm" data-switch-project aria-label="Switch project"><svg class="i"><use href="#i-folder"/></svg><span>Switch</span></button></div>
           <div class="path" id="project-path" title=""></div>
         </div>
         <div class="topbar-side">
@@ -198,7 +199,7 @@
             <div class="legend">
               <span><i class="sw sw-mod"></i>Modified</span>
               <span><i class="sw sw-new"></i>Created / initial scan</span>
-              <span><i class="sw sw-pre"></i>Pre-restore safety</span>
+              <span><i class="sw sw-pre"></i>Saved before a restore</span>
             </div>
           </div>
           <div class="card">
@@ -275,7 +276,7 @@
       <section class="view" id="view-deleted" aria-labelledby="h-deleted">
         <div class="card">
           <div class="card-head"><h2 id="h-deleted">Recover deleted files</h2><span class="muted small">files CodeVault saw, now missing from disk</span></div>
-          <div id="deleted-list" class="deleted-grid"></div>
+          <div id="deleted-list"></div>
         </div>
       </section>
 

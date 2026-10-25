@@ -212,6 +212,35 @@ class GitRepo:
             "prefix": self.prefix,
         }
 
+    def exclude(self, name: str) -> None:
+        """Add a path to .git/info/exclude (local ignore file, never committed)."""
+        rel = self._git("rev-parse", "--git-path", "info/exclude")
+        if not rel:
+            return
+        path = Path(rel) if Path(rel).is_absolute() else self.project_dir / rel
+        entry = f"/{self.prefix}{name}/"
+        try:
+            existing = path.read_text(encoding="utf-8") if path.exists() else ""
+            if entry not in existing.splitlines():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(("" if existing.endswith("\n") or not existing else "\n") + entry + "\n")
+        except OSError:
+            pass
+
     def fetch(self) -> bool:
         """Update remote-tracking refs (read-only on the remote side)."""
         return self._git("fetch", "--quiet", "--no-tags", timeout=30.0) is not None
+
+
+def clone(url: str, dest: Path) -> bool:
+    """Clone a repository; credentials come from the user's git setup, never a prompt."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    try:
+        out = subprocess.run(
+            ["git", "clone", "--quiet", url, str(dest)], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.returncode == 0

@@ -119,6 +119,24 @@ class TestGitAwareness(unittest.TestCase):
         history = api.history({"path": "app.py"})
         self.assertEqual([s["git"] for s in history["snapshots"]], [LOCAL, COMMITTED, PUSHED])
 
+    def test_open_project_switches_and_excludes_vault(self):
+        other = self.tmp / "other"
+        other.mkdir()
+        git(other, "init", "-q")
+        api = DashboardApi(self.tmp / "remote.git", Config())
+        result = api.open_project({"target": str(other)})
+        self.assertEqual(result["project_dir"], str(other))
+        self.assertEqual(api.files({}), [])
+        self.assertIn("/.lifejacket/", (other / ".git" / "info" / "exclude").read_text(encoding="utf-8"))
+        self.assertEqual(api.projects({})["recent"][:2], [str(other), str(self.tmp / "remote.git")])
+
+    def test_open_project_rejects_missing_folder(self):
+        from codevault.web.server import ApiError
+        api = DashboardApi(self.project, Config())
+        with self.assertRaises(ApiError):
+            api.open_project({"target": str(self.tmp / "nope")})
+        self.assertEqual(api.project_dir, self.project)
+
     def test_not_a_repo(self):
         plain = self.tmp / "plain"
         plain.mkdir()
