@@ -115,11 +115,20 @@ class CodeVaultEventHandler(FileSystemEventHandler):
 
         target_path = Path(event.src_path)
         try:
+            if not self.config.is_monitored_file(target_path):
+                return
+
+            # Atomic replaces (os.replace, editor safe-saves) can emit a stale
+            # delete event for a path that still exists, notably on macOS FSEvents.
+            # Treat that as a modification instead of a deletion.
+            if target_path.exists():
+                if not self.config.is_ignored_path(target_path, self.backup_engine.project_dir):
+                    self._schedule_backup(str(target_path), "modified")
+                return
+
             # Cancel any pending backup timer for this deleted file
             self._cancel_timer(str(target_path))
 
-            if not self.config.is_monitored_file(target_path):
-                return
             if self.config.is_ignored_path(target_path, self.backup_engine.project_dir):
                 return
 
