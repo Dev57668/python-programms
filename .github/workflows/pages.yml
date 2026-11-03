@@ -5,7 +5,7 @@ name: Deploy landing page
 on:
   push:
     branches: [feature/backend]
-    paths: ["codevault/web/static/landing.*", "scripts/build_landing.sh", ".github/workflows/pages.yml"]
+    paths: ["codevault/web/static/landing.*", "scripts/build_landing.sh", "codevault/web/static/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

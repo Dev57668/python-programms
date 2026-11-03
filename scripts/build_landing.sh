@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Builds the static landing page (no server needed) into $1. Used by GitHub Pages and Vercel.
-# The dashboard needs the local Python server, so its links point to the setup section instead.
+# Builds the static site (landing page + read-only dashboard demo) into $1. Used by GitHub Pages and Vercel.
+# There is no Python server there, so demo.js answers the dashboard's /api calls from recorded sample data.
 set -euo pipefail
 W=codevault/web/static
 OUT=${1:?usage: build_landing.sh <outdir>}
-mkdir -p "$OUT"
-sed -e 's#href="/landing.css"#href="landing.css"#' -e 's#src="/landing.js"#src="landing.js"#' \
-    -e 's#href="/dashboard">Open dashboard#href="\#start">Run the dashboard#g' \
-    -e 's#href="/dashboard">Watch it happen in the dashboard#href="\#start">Run it to watch it happen#' \
-    "$W/landing.html" > "$OUT/index.html"
-cp "$W/landing.css" "$OUT/landing.css"
-sed 's#location.href = "/dashboard\#files";#location.hash = "start";#' "$W/landing.js" > "$OUT/landing.js"
+mkdir -p "$OUT/dashboard" "$OUT/demo"
+sed -e 's#href="/landing.css"#href="landing.css"#' \
+    -e 's#<script src="/landing.js">#<script src="demo.js"></script><script src="landing.js">#' \
+    -e 's#href="/dashboard"#href="dashboard/"#g' "$W/landing.html" > "$OUT/index.html"
+sed -e 's#href="/style.css"#href="../style.css"#' -e 's#href="/"#href="../"#g' \
+    -e 's#<script src="/app.js">#<script src="../demo.js"></script><script src="../app.js">#' "$W/index.html" > "$OUT/dashboard/index.html"
+sed 's#location.href = "/dashboard\#files";#location.href = "dashboard/\#files";#' "$W/landing.js" > "$OUT/landing.js"
+cp "$W/landing.css" "$W/style.css" "$W/app.js" "$W/demo.js" "$OUT/"
+cp "$W/demo/api.json" "$OUT/demo/"
 touch "$OUT/.nojekyll"
-# Fail rather than publish a page with links that 404 when hosted statically.
-! grep -n '"/dashboard\|"/landing' "$OUT/index.html" "$OUT/landing.js"
+# Fail rather than publish a page with links that 404 when hosted under a sub-path.
+! grep -n '"/dashboard\|"/landing\|"/app.js\|"/style.css\|href="/"' "$OUT/index.html" "$OUT/dashboard/index.html" "$OUT/landing.js"
