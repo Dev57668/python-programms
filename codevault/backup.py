@@ -53,7 +53,9 @@ class BackupEngine:
     def create_snapshot(
         self,
         file_path: Path,
-        event_type: str = "modified"
+        event_type: str = "modified",
+        note: Optional[str] = None,
+        annotate_duplicate: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
         Create a timestamped shadow copy of a source file if content has changed.
@@ -61,6 +63,9 @@ class BackupEngine:
         Args:
             file_path: Absolute or relative path to the source file.
             event_type: 'created' or 'modified'.
+            note: Optional label, e.g. which tool made the change ("claude").
+            annotate_duplicate: If the content is unchanged and the newest snapshot
+                has no note, attach the note to it instead of skipping silently.
             
         Returns:
             Snapshot record dictionary if a snapshot was created, or None if skipped/failed.
@@ -115,6 +120,8 @@ class BackupEngine:
                     snapshot_dest_path.unlink()
                 except OSError:
                     pass
+            if note and annotate_duplicate:
+                self.db.annotate_latest_snapshot(relative_path_str, current_hash, note)
             return None
 
         # Relative path of the snapshot from project root
@@ -126,7 +133,8 @@ class BackupEngine:
             snapshot_path=snapshot_rel_str,
             file_hash=current_hash,
             file_size=file_size,
-            event_type=event_type
+            event_type=event_type,
+            note=note
         )
 
         logger.info(

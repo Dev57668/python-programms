@@ -2,6 +2,8 @@
 
 CodeVault is a lightweight local shadow-backup tool for developers. It watches a project directory and preserves timestamped snapshots of source files so uncommitted work can be recovered after accidental deletion, overwrite, or unwanted changes.
 
+**Landing page:** https://python-programms.vercel.app (the dashboard itself runs locally with `codevault ui`).
+
 **CodeVault complements Git. It does not replace Git.**
 While Git is for commits, branches, collaboration, and remote history, CodeVault provides local protection of recent/uncommitted states, rapid snapshot recovery, and protection from accidental local deletion/overwrite.
 
@@ -69,7 +71,62 @@ codevault --help
    codevault recover src/app.py
    ```
 
+## Web Dashboard
+
+Prefer a visual view? Launch the local dashboard:
+
+```bash
+codevault ui .
+```
+
+This opens `http://127.0.0.1:8765` in your browser (use `--port` to change the port, `--no-browser` to skip opening it). It is served by Python's built-in `http.server`, so it adds no dependencies and only listens on localhost.
+
+- **`/`** is the landing page: it explains CodeVault as you scroll (why uncommitted work gets lost, how a snapshot is made, what GitHub doesn't have, AI edits, safe restore, getting started) and opens on a live track of your project's recent snapshots.
+- **`/dashboard`** is the working dashboard described below.
+
+- **Overview**: one sentence that says whether your work is safe, the latest snapshots drawn as floppy disks (black = in git, blue = committed not pushed, red = only on this machine, yellow label = AI edit), recent activity, and a start/stop control for the watcher.
+- **Files**: per-file version history with content preview, diffs (vs previous / vs current), pin/unpin and one-click restore.
+- **Timeline**: every create, modify, rename and delete event, grouped by day.
+- **Recover**: deleted files with a "recover latest" action.
+- **Integrity**: re-hashes every snapshot and shows valid / corrupted / missing results.
+
+The layout adapts from a full sidebar on desktop to an icon rail on laptops and a bottom tab bar on tablets and phones. It uses a single light theme and supports keyboard shortcuts (press `?`).
+
+## GitHub & AI Tools
+
+GitHub only has what you pushed. CodeVault has every save. If the project is a git repository, the dashboard's **Git sync** page shows where each version of each file lives:
+
+| Label | Meaning |
+|-------|---------|
+| **On GitHub** | This exact content is in the pushed branch (e.g. `origin/main`). |
+| **Committed, not pushed** | In your local git history only. |
+| **Only on this machine** | Never committed. CodeVault holds the only copy. |
+
+It also lists uncommitted files, commits not yet pushed, and every file with local-only work, with a one-click restore. Git access is read-only; **Check GitHub** runs `git fetch` to refresh the remote branch state.
+
+### Track AI edits (Claude Code)
+
+Claude Code supports hooks, so CodeVault can snapshot a file right **before** and right **after** each AI edit, labelled `claude`:
+
+```bash
+codevault hooks install claude .    # writes .claude/settings.json in this project
+codevault hooks remove claude .     # undo
+```
+
+### Track AI edits (Antigravity and other tools)
+
+The watcher captures every save but can't tell *who* made it. For tools without hooks, take a labelled checkpoint before and after an agent run:
+
+```bash
+codevault snapshot . --source antigravity --note "before agent run"
+codevault snapshot . --source antigravity --note "after agent run"
+```
+
+Labels show up in the dashboard's file history, the timeline's **AI edits** filter, and the Git sync page.
+
 ## Complete CLI Reference
+
+The design of the command language, terminal output and safety rules is documented in [docs/CLI_DESIGN.md](docs/CLI_DESIGN.md).
 
 `codevault watch <dir>`
 Start real-time filesystem monitoring in the foreground.
@@ -123,6 +180,15 @@ Verify integrity of all snapshots against their expected SHA-256 hashes.
 
 `codevault diff <file> --from <ID> --to <ID>`
 Show a unified diff between two snapshots.
+
+`codevault ui [dir] [--port N] [--no-browser]`
+Open the local web dashboard (landing page at `/`, dashboard at `/dashboard`).
+
+`codevault snapshot <dir> [--source NAME] [--note TEXT]`
+Take a labelled checkpoint, e.g. before and after an AI agent run.
+
+`codevault hooks install|remove claude <dir>`
+Install or remove Claude Code hooks that snapshot files before and after each edit.
 
 `codevault timeline <path>`
 Show chronological events (snapshot creations, deletions, renames) for a file or directory.
@@ -185,6 +251,10 @@ codevault/
 ├── backup.py         (Orchestration & file ingestion)
 ├── database.py       (SQLite schema & transactional metadata)
 ├── recovery.py       (Diffing, timelines, restoration execution)
+├── gitinfo.py        (Read-only git awareness: pushed / committed / local)
+├── web/
+│   ├── server.py     (stdlib http.server dashboard and JSON API)
+│   └── static/       (landing page and dashboard: HTML, CSS, JS)
 └── utils.py          (Hashing, formatting, atomic copy helpers)
 ```
 **Flow:**
@@ -195,7 +265,7 @@ Run the comprehensive test suite with:
 ```bash
 pytest -q
 ```
-*Current test count: 100 tests (Passing).*
+*Current test count: 124 tests (passing).*
 A GitHub Actions CI workflow (`.github/workflows/tests.yml`) executes the entire suite across macOS, Linux, and Windows matrices.
 
 ## License

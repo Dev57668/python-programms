@@ -48,8 +48,8 @@ def json_fixture(tmp_path):
 def assert_same_shape(val1, val2):
     if isinstance(val1, dict):
         assert isinstance(val2, dict)
-        v1_keys = set(val1.keys()) - {"pinned"}
-        v2_keys = set(val2.keys()) - {"pinned"}
+        v1_keys = set(val1.keys()) - {"pinned", "note"}
+        v2_keys = set(val2.keys()) - {"pinned", "note"}
         assert v1_keys == v2_keys
         for k in v1_keys:
             if val1[k] is not None and val2[k] is not None:

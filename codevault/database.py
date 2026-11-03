@@ -200,7 +200,8 @@ class Database:
         snapshot_path: str,
         file_hash: str,
         file_size: int,
-        event_type: str = "modified"
+        event_type: str = "modified",
+        note: Optional[str] = None
     ) -> Dict[str, Any]:
         with self._get_connection() as conn:
             conn.execute("BEGIN EXCLUSIVE")
@@ -227,9 +228,9 @@ class Database:
 
             # Insert snapshot
             cursor = conn.execute('''
-                INSERT INTO snapshots (file_id, blob_hash, snapshot_path, created_at, event_type)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (file_id, file_hash, snapshot_path, now_str, event_type))
+                INSERT INTO snapshots (file_id, blob_hash, snapshot_path, created_at, event_type, note)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (file_id, file_hash, snapshot_path, now_str, event_type, note))
             
             snapshot_id = cursor.lastrowid
             
@@ -240,7 +241,8 @@ class Database:
                 "timestamp": now_str,
                 "hash": file_hash,
                 "size": file_size,
-                "event_type": event_type
+                "event_type": event_type,
+                "note": note
             }
 
     def record_deletion(self, relative_path: str) -> Optional[Dict[str, Any]]:
@@ -300,7 +302,7 @@ class Database:
         with self._get_connection() as conn:
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type, s.pinned
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned, s.note
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -314,7 +316,7 @@ class Database:
         with self._get_connection() as conn:
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type, s.pinned
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned, s.note
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -327,7 +329,7 @@ class Database:
         with self._get_connection() as conn:
             row = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type, s.pinned
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned, s.note
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -336,6 +338,27 @@ class Database:
             if row:
                 return dict(row)
             return None
+
+    def annotate_latest_snapshot(self, relative_path: str, file_hash: str, note: str) -> Optional[int]:
+        """
+        Attach a note to the newest snapshot of a file if it has this content
+        and no note yet. Used when an attributed save dedupes against a
+        snapshot the watcher already took. Returns the snapshot id or None.
+        """
+        with self._get_connection() as conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            row = conn.execute('''
+                SELECT s.id, s.blob_hash, s.note
+                FROM snapshots s
+                JOIN files f ON s.file_id = f.id
+                WHERE f.path = ?
+                ORDER BY s.created_at DESC, s.id DESC
+                LIMIT 1
+            ''', (relative_path,)).fetchone()
+            if not row or row["blob_hash"] != file_hash or row["note"]:
+                return None
+            conn.execute("UPDATE snapshots SET note = ? WHERE id = ?", (note, row["id"]))
+            return row["id"]
 
     def set_pin_status(self, snapshot_id: int, pinned: bool) -> bool:
         with self._get_connection() as conn:
@@ -395,7 +418,7 @@ class Database:
             
             rows = conn.execute('''
                 SELECT s.id, f.path as relative_path, s.snapshot_path, s.created_at as timestamp, 
-                       s.blob_hash as hash, b.size, s.event_type, s.pinned
+                       s.blob_hash as hash, b.size, s.event_type, s.pinned, s.note
                 FROM snapshots s
                 JOIN files f ON s.file_id = f.id
                 JOIN blobs b ON s.blob_hash = b.hash
@@ -484,7 +507,7 @@ class Database:
                         "file_id": f["id"]
                     })
 
-            snaps = conn.execute("SELECT s.id, s.created_at, s.event_type, f.path, f.id as file_id FROM snapshots s JOIN files f ON s.file_id = f.id").fetchall()
+            snaps = conn.execute("SELECT s.id, s.created_at, s.event_type, s.note, f.path, f.id as file_id FROM snapshots s JOIN files f ON s.file_id = f.id").fetchall()
             for s in snaps:
                 e_type = s["event_type"].upper()
                 if e_type == "CREATION": e_type = "CREATED"
@@ -494,7 +517,8 @@ class Database:
                     "event": e_type,
                     "path": s["path"],
                     "snapshot_id": s["id"],
-                    "file_id": s["file_id"]
+                    "file_id": s["file_id"],
+                    "note": s["note"]
                 })
 
             renames = conn.execute("SELECT r.timestamp, r.old_path, r.new_path, r.file_id FROM renames r").fetchall()

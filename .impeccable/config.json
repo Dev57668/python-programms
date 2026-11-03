@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "codevault/web/static/landing.html"
+        ],
+        "createdAt": "2026-11-03T20:43:26.600Z",
+        "reason": "assistant triage: hook scans the raw file where /landing.css (server-absolute path) does not resolve; detect on the served page http://127.0.0.1:8765/ returns no findings"
+      }
+    ]
+  }
+}

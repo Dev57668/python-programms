@@ -68,7 +68,7 @@ Students and developers lose work by accident: overwriting a file with the wrong
 - **Quality:** pytest suite covering snapshot, dedupe, retention, restore, delete handling; runs in CI.
 
 ## 9. CLI Surface (summary)
-`init`, `start`, `stop`, `status`, `timeline`, `diff`, `restore`, `restore-project`, `deleted`, `pin`, `unpin`, `clean`, `purge`, `verify`, `config`. Full behaviour is defined in `DESIGN.md`.
+`init`, `start`, `stop`, `status`, `timeline`, `diff`, `restore`, `restore-project`, `deleted`, `pin`, `unpin`, `clean`, `purge`, `verify`, `config`. Full behaviour is defined in `docs/CLI_DESIGN.md`.
 
 ## 10. Success Metrics
 - A deleted or overwritten file is recoverable in under 30 seconds using the CLI.
