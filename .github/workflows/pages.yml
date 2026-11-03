@@ -5,7 +5,7 @@ name: Deploy landing page
 on:
   push:
     branches: [feature/backend]
-    paths: ["codevault/web/static/landing.*", ".github/workflows/pages.yml"]
+    paths: ["codevault/web/static/landing.*", "scripts/build_landing.sh", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -21,18 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build static site
-        run: |
-          W=codevault/web/static
-          mkdir site
-          sed -e 's#href="/landing.css"#href="landing.css"#' -e 's#src="/landing.js"#src="landing.js"#' \
-              -e 's#href="/dashboard">Open dashboard#href="\#start">Run the dashboard#g' \
-              -e 's#href="/dashboard">Watch it happen in the dashboard#href="\#start">Run it to watch it happen#' \
-              "$W/landing.html" > site/index.html
-          cp "$W/landing.css" site/landing.css
-          sed 's#location.href = "/dashboard\#files";#location.hash = "start";#' "$W/landing.js" > site/landing.js
-          touch site/.nojekyll
-          # Fail rather than publish a page with links that 404 on Pages.
-          ! grep -n '"/dashboard\|"/landing' site/index.html site/landing.js
+        run: scripts/build_landing.sh site
       - name: Push to gh-pages
         run: |
           cd site

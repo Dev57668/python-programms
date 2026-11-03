@@ -29,3 +29,8 @@ __pycache__/
 .impeccable/questions/
 .impeccable/archive/
 .impeccable/hook.cache.json
+
+# Vercel / local landing build output
+public/
+.vercel/
+.vercel
