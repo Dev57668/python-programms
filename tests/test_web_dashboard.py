@@ -62,6 +62,12 @@ class TestDashboardApi(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/") as r:
             self.assertIn(b"CodeVault", r.read())
 
+    def test_dashboard_served(self):
+        with urllib.request.urlopen(self.base + "/dashboard") as r:
+            body = r.read()
+        self.assertIn(b"CodeVault", body)
+        self.assertIn(b"/app.js", body)
+
     def test_overview_and_files(self):
         overview = self._get("/api/overview")
         self.assertEqual(overview["stats"]["snapshots"], 2)

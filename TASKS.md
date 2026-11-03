@@ -3,7 +3,7 @@
 > I could not see your source code, only the repo file list. Each task starts with an **audit step**: ask the agent to check what already exists before it builds anything. Skip tasks that turn out to be done.
 
 ## How to use this file
-1. Put the five docs in a `docs/` folder in the repo (`PRD.md`, `TECH_STACK.md`, `SCHEMA.md`, `DESIGN.md`, `TASKS.md`).
+1. Put the five docs in a `docs/` folder in the repo (`PRD.md`, `TECH_STACK.md`, `SCHEMA.md`, `CLI_DESIGN.md`, `TASKS.md`).
 2. Start each Antigravity session with the **Master Prompt**.
 3. Do one task per branch: `git checkout -b feature/<task-name>` → prompt → run tests → commit → push → Pull Request.
 4. Review the diff before accepting. Don't let the agent rewrite files you didn't ask about.
@@ -14,7 +14,7 @@
 
 ```
 You are helping me finish "CodeVault", a 100% Python local code-recovery tool.
-Read docs/PRD.md, docs/TECH_STACK.md, docs/SCHEMA.md and docs/DESIGN.md first and follow them.
+Read docs/PRD.md, docs/TECH_STACK.md, docs/SCHEMA.md and docs/CLI_DESIGN.md first and follow them.
 
 Rules:
 - Pure Python. The only runtime dependency is `watchdog`. No GUI, no web framework.
@@ -88,7 +88,7 @@ In recovery.py, make `restore PATH [--id ID | --at TIME] [--to OUTPUT_PATH] [--y
 - If the target file exists and differs from the snapshot, first create a `pre_restore` snapshot of it.
 - Write the restored content atomically.
 - `--to` restores to another path and never touches the original.
-- Print output in the style of docs/DESIGN.md.
+- Print output in the style of docs/CLI_DESIGN.md.
 - Implement the `--at` time parser: ISO datetime, HH:MM today, or relative (10m, 2h, 1d).
 Add tests: restore over a modified file (pre_restore snapshot exists), restore with --to, restore of an unknown id.
 ```
@@ -160,7 +160,7 @@ recovery, status numbers. Use tmp_path fixtures so tests never touch a real proj
 ## T11: README and release (M4)
 
 ```
-Rewrite README.md using the structure at the end of docs/DESIGN.md: pitch and "not a Git replacement" note,
+Rewrite README.md using the structure at the end of docs/CLI_DESIGN.md: pitch and "not a Git replacement" note,
 install, 60-second quick start, command reference table, how it works, configuration, contributing, license.
 Use real command output, not invented output. Then propose CHANGELOG.md for v1.0.0 and the git commands to tag
 and create a GitHub release.

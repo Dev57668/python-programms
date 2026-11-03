@@ -79,13 +79,16 @@ codevault ui .
 
 This opens `http://127.0.0.1:8765` in your browser (use `--port` to change the port, `--no-browser` to skip opening it). It is served by Python's built-in `http.server`, so it adds no dependencies and only listens on localhost.
 
-- **Overview**: protection status, live snapshot feed, activity chart, and a start/stop control for the watcher.
+- **`/`** is the landing page: it explains CodeVault as you scroll (why uncommitted work gets lost, how a snapshot is made, what GitHub doesn't have, AI edits, safe restore, getting started) and opens on a live track of your project's recent snapshots.
+- **`/dashboard`** is the working dashboard described below.
+
+- **Overview**: one sentence that says whether your work is safe, the latest snapshots drawn as floppy disks (black = in git, blue = committed not pushed, red = only on this machine, yellow label = AI edit), recent activity, and a start/stop control for the watcher.
 - **Files**: per-file version history with content preview, diffs (vs previous / vs current), pin/unpin and one-click restore.
 - **Timeline**: every create, modify, rename and delete event, grouped by day.
 - **Recover**: deleted files with a "recover latest" action.
 - **Integrity**: re-hashes every snapshot and shows valid / corrupted / missing results.
 
-The layout adapts from a full sidebar on desktop to an icon rail on laptops and a bottom tab bar on tablets and phones. It supports light/dark themes and keyboard shortcuts (press `?`).
+The layout adapts from a full sidebar on desktop to an icon rail on laptops and a bottom tab bar on tablets and phones. It uses a single light theme and supports keyboard shortcuts (press `?`).
 
 ## GitHub & AI Tools
 
@@ -120,6 +123,8 @@ codevault snapshot . --source antigravity --note "after agent run"
 Labels show up in the dashboard's file history, the timeline's **AI edits** filter, and the Git sync page.
 
 ## Complete CLI Reference
+
+The design of the command language, terminal output and safety rules is documented in [docs/CLI_DESIGN.md](docs/CLI_DESIGN.md).
 
 `codevault watch <dir>`
 Start real-time filesystem monitoring in the foreground.

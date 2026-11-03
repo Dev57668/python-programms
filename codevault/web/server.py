@@ -33,7 +33,11 @@ from codevault.utils import compute_file_hash, format_size
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_FILES = {
-    "/": "index.html",
+    "/": "landing.html",
+    "/landing.css": "landing.css",
+    "/landing.js": "landing.js",
+    "/dashboard": "index.html",
+    "/dashboard/": "index.html",
     "/index.html": "index.html",
     "/app.js": "app.js",
     "/style.css": "style.css",

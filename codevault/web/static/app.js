@@ -13,7 +13,6 @@ const state = {
   timeline: [],
   deleted: [],
   git: null,
-  range: "1h",
   timelineFilter: "ALL",
   fileFilter: "",
   selectedPath: null,
@@ -82,10 +81,6 @@ function eventClass(ev) {
   return "OTHER";
 }
 
-const EVENT_ICON = {
-  CREATED: "plus", INITIAL: "scan", MODIFIED: "edit", DELETED: "trash", RENAMED: "move", PRE_RESTORE: "restore",
-  AI_EDIT: "bot", PRE_AI: "bot", CHECKPOINT: "pin", OTHER: "dot",
-};
 const EVENT_LABEL = {
   CREATED: "created", INITIAL: "initial scan", MODIFIED: "modified", DELETED: "deleted", RENAMED: "renamed",
   PRE_RESTORE: "saved before restore", AI_EDIT: "AI edit", PRE_AI: "before AI edit", CHECKPOINT: "checkpoint", OTHER: "snapshot",
@@ -98,7 +93,7 @@ const GIT_STATE = {
   local: { label: "only on this machine", icon: "laptop", tip: "Never committed. Only CodeVault has this version." },
 };
 const gitBadge = (st) => (st && GIT_STATE[st]
-  ? `<span class="badge g-${st}" title="${GIT_STATE[st].tip}">${ic(GIT_STATE[st].icon)}${GIT_STATE[st].label}</span>`
+  ? `<span class="badge g-${st}" title="${GIT_STATE[st].tip}">${GIT_STATE[st].label}</span>`
   : "");
 
 const HUMAN_SOURCES = ["manual", "me", "human"];
@@ -110,12 +105,12 @@ function srcBadge(note, withDetail = false) {
   if (!name) return "";
   const human = HUMAN_SOURCES.includes(name.toLowerCase());
   const label = withDetail ? note : name;
-  return `<span class="badge src ${human ? "human" : ""}" title="${esc(note)}">${ic(human ? "edit" : "bot")}${esc(label)}</span>`;
+  return `<span class="badge src ${human ? "human" : ""}" title="${esc(note)}">${esc(label)}</span>`;
 }
 
 const GIT_LETTER = { modified: "M", added: "A", deleted: "D", untracked: "U", renamed: "R" };
 const gitLetter = (st) => (st ? `<span class="st st-${st}" title="git: ${st}">${GIT_LETTER[st] || "?"}</span>` : "");
-const evIco = (c) => `<span class="ev-ico ev-${c}" title="${EVENT_LABEL[c]}">${ic(EVENT_ICON[c])}</span>`;
+const evIco = (c) => `<span class="ev-tag ev-${c}">${EVENT_LABEL[c]}</span>`;
 
 async function api(path, body) {
   const opts = body === undefined ? {} : {
@@ -130,10 +125,9 @@ async function api(path, body) {
 }
 
 function toast(title, detail = "", kind = "") {
-  const icon = kind === "err" ? "alert" : kind === "info" ? "layers" : "check";
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
-  el.innerHTML = `<span class="t-ico">${ic(icon)}</span><div><b>${esc(title)}</b>${detail ? `<span class="t-detail">${esc(detail)}</span>` : ""}</div>`;
+  el.innerHTML = `<div><b>${esc(title)}</b>${detail ? `<span class="t-detail">${esc(detail)}</span>` : ""}</div>`;
   const box = $("#toasts");
   box.appendChild(el);
   while (box.children.length > 3) box.firstChild.remove();
@@ -186,31 +180,9 @@ function openModal(title, bodyHtml, { okLabel = "Confirm", cancelLabel = "Cancel
   });
 }
 
-/* ---------------- theme ---------------- */
-
-const THEMES = ["system", "light", "dark"];
-const THEME_ICON = { system: "monitor", light: "sun", dark: "moon" };
-let theme = "system";
-try { theme = localStorage.getItem("cv-theme") || "system"; } catch { /* storage blocked */ }
-
-function applyTheme() {
-  if (theme === "system") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = theme;
-  $$("[data-theme-btn]").forEach((b) => {
-    $("use", b).setAttribute("href", `#i-${THEME_ICON[theme]}`);
-    b.setAttribute("aria-label", `Theme: ${theme}. Click to change`);
-    b.title = `Theme: ${theme}`;
-    const lbl = $(".lbl", b);
-    if (lbl) lbl.textContent = `${theme[0].toUpperCase()}${theme.slice(1)} theme`;
-  });
-  if (state.loaded) renderChart();
-}
-
-function cycleTheme() {
-  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
-  try { localStorage.setItem("cv-theme", theme); } catch { /* ignore */ }
-  applyTheme();
-}
+/* Light only: clear any theme a previous version saved. */
+try { localStorage.removeItem("cv-theme"); } catch { /* storage blocked */ }
+delete document.documentElement.dataset.theme;
 
 /* ---------------- count-up stats ---------------- */
 
@@ -256,7 +228,8 @@ function renderDaemon(o) {
       lbl.textContent = running ? "Watching" : "Stopped";
       return;
     }
-    $("use", btn).setAttribute("href", running ? "#i-stop" : "#i-play");
+    const u = $("use", btn);
+    if (u) u.setAttribute("href", running ? "#i-stop" : "#i-play");
     lbl.textContent = running ? "Stop watcher" : "Start watcher";
     if (!btn.classList.contains("hero-cta")) btn.classList.toggle("btn-primary", !running);
     else btn.hidden = running;
@@ -283,8 +256,6 @@ function renderOverview() {
   renderDaemon(o);
 
   const running = o.daemon.status === "RUNNING";
-  const total = s.protected_files + s.deleted_files;
-  const coverage = total ? s.protected_files / total : 0;
   $("#hero").classList.toggle("idle", !running);
   $("#hero-status").textContent = running
     ? "Protection active"
@@ -295,95 +266,56 @@ function renderOverview() {
       ? "Existing snapshots are still restorable. Start the watcher to keep capturing new changes."
       : "Start the watcher and CodeVault will snapshot every source file you save in this project.";
   $("#hero-last").textContent = ago(s.last_snapshot);
-  $("#hero-retention").textContent = `${o.config.max_snapshots} versions · ${o.config.max_age_days} days`;
-  const circ = 339.3;
-  $("#ring-progress").style.strokeDashoffset = String(circ * (1 - (running ? Math.max(coverage, 0.02) : coverage * 0.35)));
+  $("#hero-retention").textContent = `${o.config.max_snapshots} snapshots per file for ${o.config.max_age_days} days`;
 
-  renderChart();
   renderSettings();
+  renderDiskRow();
 }
 
-function renderChart() {
-  const el = $("#activity-chart");
-  const acts = (state.overview?.activity || []).map((a) => ({ d: parseTs(a.t), type: a.type }));
-  const narrow = el.clientWidth < 480;
-  const cfg = {
-    "1h": { n: 12, ms: 5 * 60e3, every: narrow ? 3 : 2, fmt: (d) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
-    "24h": { n: 24, ms: 3600e3, every: narrow ? 6 : 4, fmt: (d) => d.toLocaleTimeString([], { hour: "2-digit" }) },
-    "7d": { n: 7, ms: 86400e3, every: 1, fmt: (d) => d.toLocaleDateString([], { weekday: "short" }) },
-  }[state.range];
+// Snapshot id -> "pushed" | "committed" | "local", learned from /api/history.
+const snapGit = new Map();
+const PLASTIC = { pushed: "", committed: "committed", local: "local" };
+const isAiEvent = (ev) => ["AI_EDIT", "PRE_AI"].includes(eventClass(ev.event)) || (!!sourceName(ev.note) && !HUMAN_SOURCES.includes(sourceName(ev.note).toLowerCase()));
 
-  const end = state.range === "7d"
-    ? new Date(new Date().setHours(24, 0, 0, 0)).getTime()
-    : Math.ceil(Date.now() / cfg.ms) * cfg.ms;
-  const startT = end - cfg.n * cfg.ms;
-  const buckets = Array.from({ length: cfg.n }, (_, i) => ({ t: new Date(startT + i * cfg.ms), mod: 0, new: 0, pre: 0 }));
-  for (const a of acts) {
-    if (!a.d) continue;
-    const i = Math.floor((a.d.getTime() - startT) / cfg.ms);
-    if (i < 0 || i >= cfg.n) continue;
-    const t = String(a.type).toLowerCase();
-    const k = t === "pre_restore" ? "pre" : ["created", "creation", "initial"].includes(t) ? "new" : "mod";
-    buckets[i][k]++;
+// Where a snapshot's content lives, as a disk plastic class.
+function plasticOf(snapId, path, deleted) {
+  if (deleted) return "deleted";
+  if (snapGit.has(snapId)) return PLASTIC[snapGit.get(snapId)] ?? "";
+  const f = state.files.find((x) => x.path === path);
+  return f && f.local_only ? "local" : "";
+}
+const PLASTIC_TEXT = { "": "in git", committed: "committed, not pushed", local: "only on this machine", deleted: "deleted" };
+const chipDisk = (plastic, ai = false, pinned = false) =>
+  `<span class="chip-disk ${plastic}${ai ? " ai" : ""}${pinned ? " pinned" : ""}" title="${PLASTIC_TEXT[plastic]}${ai ? ", AI edit" : ""}${pinned ? ", pinned" : ""}" aria-hidden="true"></span>`;
+
+async function learnStates(paths) {
+  const missing = paths.filter((p) => !state.timeline.some((e) => e.path === p && e.snapshot_id && snapGit.has(e.snapshot_id)));
+  if (!missing.length) return false;
+  const hs = await Promise.all(missing.map((p) => api(`/api/history?path=${encodeURIComponent(p)}`).catch(() => null)));
+  hs.forEach((h) => h && h.snapshots.forEach((sn) => sn.git && snapGit.set(sn.id, sn.git)));
+  return true;
+}
+
+function renderDiskRow() {
+  const picks = [];
+  const seen = new Set();
+  for (const ev of state.timeline) {
+    if (!ev.snapshot_id || seen.has(ev.path)) continue;
+    seen.add(ev.path);
+    picks.push(ev);
+    if (picks.length === 6) break;
   }
-  const totals = buckets.map((b) => b.mod + b.new + b.pre);
-  const sum = totals.reduce((a, b) => a + b, 0);
-  const max = Math.max(1, ...totals);
-  const W = Math.max(el.clientWidth, 280), H = el.clientHeight || 200, padL = 28, padB = 22, plotH = H - padB - 8;
-  const bw = (W - padL) / cfg.n;
-  const y = (v) => 8 + plotH - (v / max) * plotH;
-  const ticks = [0, Math.ceil(max / 2), max].filter((v, i, a) => a.indexOf(v) === i);
-
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Snapshots per interval, ${state.range} window">`;
-  for (const t of ticks) {
-    svg += `<line class="grid" x1="${padL}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/>`;
-    svg += `<text class="axis" x="${padL - 8}" y="${y(t) + 3.5}" text-anchor="end">${t}</text>`;
-  }
-  const colors = { mod: "var(--green)", new: "var(--cyan)", pre: "var(--violet)" };
-  buckets.forEach((b, i) => {
-    const w = Math.min(bw * 0.62, 34);
-    const x = padL + i * bw + (bw - w) / 2;
-    svg += `<rect class="hit" data-i="${i}" x="${padL + i * bw}" y="0" width="${bw}" height="${H - padB}" fill="transparent"/>`;
-    let acc = 0;
-    for (const k of ["mod", "new", "pre"]) {
-      if (!b[k]) continue;
-      const y1 = y(acc + b[k]);
-      const h = y(acc) - y1;
-      svg += `<rect class="bar" data-i="${i}" x="${x}" y="${y1}" width="${w}" height="${Math.max(h - 1.5, 2)}" rx="4" fill="${colors[k]}"/>`;
-      acc += b[k];
-    }
-    if (i % cfg.every === 0) {
-      svg += `<text class="axis" x="${padL + i * bw + bw / 2}" y="${H - 5}" text-anchor="middle">${esc(cfg.fmt(b.t))}</text>`;
-    }
-  });
-  if (!sum) {
-    svg += `<text class="empty" x="${(W + padL) / 2}" y="${H / 2 - 6}" text-anchor="middle">No snapshots in this window yet.</text>`;
-    svg += `<text class="empty" x="${(W + padL) / 2}" y="${H / 2 + 14}" text-anchor="middle" style="font-size:12px">Save a file to see it appear.</text>`;
-  }
-  svg += `</svg><div class="chart-tip" hidden></div>`;
-  el.innerHTML = svg;
-
-  const busiest = buckets[totals.indexOf(Math.max(...totals))];
-  $("#chart-summary").textContent = sum
-    ? `${sum} snapshots in the last ${state.range}. Busiest interval ${cfg.fmt(busiest.t)} with ${Math.max(...totals)}.`
-    : `No snapshots in the last ${state.range}.`;
-
-  const tip = $(".chart-tip", el);
-  const showTip = (e) => {
-    const i = e.target.dataset?.i;
-    if (i === undefined) { tip.hidden = true; return; }
-    const b = buckets[+i];
-    const total = totals[+i];
-    const r = el.getBoundingClientRect();
-    const pt = e.touches ? e.touches[0] : e;
-    tip.hidden = false;
-    tip.style.left = `${Math.min(Math.max(pt.clientX - r.left, 70), r.width - 70)}px`;
-    tip.style.top = `${pt.clientY - r.top}px`;
-    tip.innerHTML = `<b>${total}</b> snapshot${total === 1 ? "" : "s"} · ${esc(cfg.fmt(b.t))}`;
-  };
-  el.onmousemove = showTip;
-  el.ontouchstart = showTip;
-  el.onmouseleave = () => { tip.hidden = true; };
+  setHTML($("#disk-row"), picks.length ? picks.map((ev) => {
+    const f = state.files.find((x) => x.path === ev.path);
+    const st = plasticOf(ev.snapshot_id, ev.path, f && !f.exists);
+    const ai = isAiEvent(ev);
+    const where = PLASTIC_TEXT[st];
+    return `<span class="mini-wrap"><button class="mini ${st} ${ai ? "ai" : ""}" data-open="${esc(ev.path)}" data-snap="${ev.snapshot_id}"
+      aria-label="${esc(`${ev.path}, snapshot #${ev.snapshot_id}, ${ago(ev.timestamp)}, ${where}${ai ? ", AI edit" : ""}`)}" title="${esc(ev.path)}">
+      <span class="lbl"><span class="f">${esc(ev.path.split("/").pop())}</span><span class="m">#${ev.snapshot_id} · ${esc((parseTs(ev.timestamp) || new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }))}</span></span></button></span>`;
+  }).join("") : `<p class="muted">No snapshots yet. Start the watcher and save a file.</p>`);
+  // Learn exact per-snapshot states for these files, then redraw once.
+  learnStates(picks.map((e) => e.path)).then((changed) => { if (changed) renderDiskRow(); });
 }
 
 function evPath(ev) {
@@ -391,7 +323,7 @@ function evPath(ev) {
 }
 
 function renderFeed(newIds = new Set()) {
-  const items = state.timeline.slice(0, 14);
+  const items = state.timeline.slice(0, 8);
   setHTML($("#feed"), items.length
     ? items.map((ev) => {
         const c = eventClass(ev.event);
@@ -401,7 +333,7 @@ function renderFeed(newIds = new Set()) {
           <time datetime="${esc(ev.timestamp)}" title="${esc(ev.timestamp)}">${ago(ev.timestamp)}</time>
         </li>`;
       }).join("")
-    : `<li><span></span><span class="muted">Nothing yet. Start the watcher and save a file.</span><span></span></li>`);
+    : `<li class="feed-empty">Nothing yet. Start the watcher and save a file.</li>`);
 }
 
 /* ---------------- files ---------------- */
@@ -414,11 +346,10 @@ function renderFileList() {
         const [dir, name] = splitPath(f.path);
         const active = f.path === state.selectedPath;
         return `<li role="option" tabindex="0" aria-selected="${active}" data-path="${esc(f.path)}" class="${active ? "active" : ""} ${f.exists ? "" : "deleted"}">
-          <span class="f-ico">${ic("files", "i-sm")}</span>
           <span class="fname" title="${esc(f.path)}"><span class="dir">${esc(dir)}</span>${esc(name)}</span>
           ${f.local_only ? `<span class="local-dot" title="${f.local_only} version${f.local_only === 1 ? "" : "s"} only on this machine"></span>` : ""}
           ${gitLetter(f.git)}
-          <span class="badge type" title="${f.snapshots} snapshots">${ic("layers")}${f.snapshots}</span>
+          <span class="badge type" title="${f.snapshots} snapshots">${f.snapshots}</span>
           ${f.exists ? "" : `<span class="badge bad">deleted</span>`}
         </li>`;
       }).join("")
@@ -450,6 +381,7 @@ async function loadHistory() {
     return;
   }
   const snaps = state.history.snapshots;
+  snaps.forEach((sn) => sn.git && snapGit.set(sn.id, sn.git));
   if (!snaps.some((s) => s.id === state.selectedSnapId)) state.selectedSnapId = snaps[0]?.id ?? null;
   renderDetail();
 }
@@ -465,8 +397,8 @@ function renderDetail() {
         <h2>${esc(h.path)}</h2>
         <div class="sub">
           <span>${snaps.length} snapshot${snaps.length === 1 ? "" : "s"}</span>
-          <span class="badge ${h.exists ? "ok" : "bad"}">${ic(h.exists ? "check" : "trash")}${h.exists ? "on disk" : "deleted from disk"}</span>
-          ${h.github_url ? `<a class="gh-link" href="${esc(h.github_url)}" target="_blank" rel="noopener noreferrer">${ic("github")}View on GitHub${ic("external")}</a>` : ""}
+          <span class="badge ${h.exists ? "ok" : "bad"}">${h.exists ? "on disk" : "deleted from disk"}</span>
+          ${h.github_url ? `<a class="gh-link" href="${esc(h.github_url)}" target="_blank" rel="noopener noreferrer">View on GitHub</a>` : ""}
         </div>
       </div>
     </div>
@@ -474,11 +406,11 @@ function renderDetail() {
       <ol class="versions" aria-label="Snapshot versions">
         ${snaps.map((s, i) => `
           <li tabindex="0" data-id="${s.id}" aria-current="${s.id === state.selectedSnapId}" class="${esc(String(s.event_type).toLowerCase())} ${s.git === "local" ? "local" : ""} ${s.id === state.selectedSnapId ? "active" : ""}">
-            <div class="v-top"><span class="v-id">#${s.id}${i === 0 ? " · latest" : ""}</span><span class="v-time">${ago(s.timestamp)}</span></div>
+            <div class="v-top"><span class="v-id">${chipDisk(PLASTIC[s.git] ?? "", !!sourceName(s.note) && !HUMAN_SOURCES.includes(sourceName(s.note).toLowerCase()) || ["AI_EDIT", "PRE_AI"].includes(eventClass(s.event_type)), !!s.pinned)}#${s.id}${i === 0 ? " · latest" : ""}</span><span class="v-time">${ago(s.timestamp)}</span></div>
             <div class="v-meta">
               <span class="badge type">${esc(EVENT_LABEL[eventClass(s.event_type)])}</span>
               <span class="badge type">${esc(s.size_str)}</span>
-              ${s.pinned ? `<span class="badge pin">${ic("pin")}pinned</span>` : ""}
+              ${s.pinned ? `<span class="badge pin">pinned</span>` : ""}
               ${srcBadge(s.note)}
               ${gitBadge(s.git)}
             </div>
@@ -511,12 +443,12 @@ async function renderViewer() {
         ${mode("view", "Content")}${mode("prev", "What changed")}${mode("current", "vs current file")}
       </div>
       <div class="viewer-actions">
-        <button class="btn btn-sm" data-act="pin">${ic("pin")}<span>${snap.pinned ? "Unpin" : "Pin"}</span></button>
-        <button class="btn btn-sm btn-primary" data-act="restore">${ic("restore")}<span>Restore #${snap.id}</span></button>
+        <button class="btn btn-sm" data-act="pin"><span>${snap.pinned ? "Unpin" : "Pin"}</span></button>
+        <button class="btn btn-sm btn-primary" data-act="restore"><span>Restore #${snap.id}</span></button>
       </div>
     </div>
     <div class="code" id="code" tabindex="0" aria-label="Snapshot content"><table><tr class="note-row"><td><span class="sk sk-line" style="width:240px"></span></td></tr></table></div>
-    <div class="hint" title="${esc(snap.hash)}">${ic("hash", "i-sm")}sha256 ${esc(snap.hash)} · ${esc(snap.timestamp)}${snap.note ? ` · ${esc(snap.note)}` : ""}</div>`;
+    <div class="hint" title="${esc(snap.hash)}">sha256 ${esc(snap.hash)} · ${esc(snap.timestamp)}${snap.note ? ` · ${esc(snap.note)}` : ""}</div>`;
 
   try {
     let html;
@@ -556,7 +488,7 @@ async function restoreSnapshot(snap, path, existsNow) {
       <dt>Saved</dt><dd>${esc(snap.timestamp)} (${ago(snap.timestamp)})</dd>
       <dt>SHA-256</dt><dd>${esc(String(snap.hash).slice(0, 24))}…</dd>
     </dl>
-    <div class="note ${existsNow ? "warn" : ""}">${ic(existsNow ? "alert" : "restore")}<span>${existsNow
+    <div class="note ${existsNow ? "warn" : ""}"><span>${existsNow
       ? "The current file will be overwritten. Its present content is kept as a <b>pre-restore snapshot</b> first, so this is undoable."
       : "This file is missing from disk and will be recreated at its original path."}</span></div>`,
     { okLabel: "Restore file" },
@@ -581,9 +513,9 @@ function renderSyncStrip() {
   el.hidden = false;
   if (!g.is_repo) {
     el.className = "sync-strip";
-    el.innerHTML = `<span class="s-ico">${ic("branch")}</span><span class="s-text"><b>Not a git repository</b>
+    el.innerHTML = `<span class="s-text"><b>Not a git repository</b>
       <span class="s-sub">Connect this project to GitHub to see which versions are pushed.</span></span>
-      <span class="s-go"><span>Set up</span>${ic("move", "i-sm")}</span>`;
+      <span class="s-go"><span>Set up</span></span>`;
     return;
   }
   const risk = g.at_risk.length;
@@ -593,14 +525,13 @@ function renderSyncStrip() {
   if (g.changes.length) parts.push(`${g.changes.length} uncommitted file${g.changes.length === 1 ? "" : "s"}`);
   if (g.ahead) parts.push(`${g.ahead} commit${g.ahead === 1 ? "" : "s"} not pushed`);
   if (g.behind) parts.push(`${g.behind} commit${g.behind === 1 ? "" : "s"} to pull`);
-  el.innerHTML = `<span class="s-ico">${ic(ok ? "cloud" : "laptop")}</span>
-    <span class="s-text">
+  el.innerHTML = `<span class="s-text">
       <b>${ok ? "Everything is on GitHub" : risk
         ? `${risk} file${risk === 1 ? " has" : "s have"} work that exists only on this machine`
         : "Some work isn't on GitHub yet"}</b>
       <span class="s-sub">${esc(g.branch)}${g.upstream ? ` → ${esc(g.upstream)}` : " (no upstream)"}${parts.length ? ` · ${parts.join(" · ")}` : ""}</span>
     </span>
-    <span class="s-go"><span>Review</span>${ic("move", "i-sm")}</span>`;
+    <span class="s-go"><span>Review</span></span>`;
 }
 
 function renderGit() {
@@ -608,38 +539,36 @@ function renderGit() {
   const g = state.git;
   if (!g) return;
   if (g.error) {
-    setHTML(root, `<div class="card"><div class="git-empty">${ic("alert")}<span>Couldn't read this project's git status: ${esc(g.error)}. Retrying automatically.</span></div></div>`);
+    setHTML(root, `<div class="card"><div class="git-empty"><span>Couldn't read this project's git status: ${esc(g.error)}. Retrying automatically.</span></div></div>`);
     return;
   }
   if (!g.is_repo) {
     setHTML(root, `<div class="card">
-      <div class="git-head"><span class="gh-ico">${ic("github")}</span>
-        <div class="gh-main"><div class="gh-title">This project isn't a git repository yet</div>
+      <div class="git-head"><div class="gh-main"><div class="gh-title">This project isn't a git repository yet</div>
         <div class="gh-sub">CodeVault still protects every save. Connect git to see what's on GitHub.</div></div></div>
       <ol class="setup-steps">
         <li>Run <code>git init</code> in the project folder and make a first commit.</li>
         <li>Add your GitHub repo: <code>git remote add origin https://github.com/you/repo.git</code></li>
         <li>Push once with <code>git push -u origin main</code>. This page updates automatically.</li>
       </ol>
-      <button class="btn btn-primary" data-switch-project style="margin-top:14px">${ic("branch")}Open a different project or GitHub repo</button></div>`);
+      <button class="btn btn-primary" data-switch-project style="margin-top:14px">Open a different project or GitHub repo</button></div>`);
     return;
   }
   const vc = g.version_counts;
   const lc = g.last_commit;
   const ghBtn = g.web_url
-    ? `<a class="btn btn-sm" href="${esc(g.web_url)}" target="_blank" rel="noopener noreferrer">${ic("github")}Open on GitHub</a>` : "";
+    ? `<a class="btn btn-sm" href="${esc(g.web_url)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a>` : "";
   const pills = [
-    g.upstream ? `<span class="sync-pill ${g.ahead ? "warn" : "good"}">${ic("upload")}${g.ahead} commit${g.ahead === 1 ? "" : "s"} to push</span>` : `<span class="sync-pill warn">${ic("alert")}no upstream branch</span>`,
-    g.upstream ? `<span class="sync-pill ${g.behind ? "warn" : ""}">${ic("download")}${g.behind} commit${g.behind === 1 ? "" : "s"} to pull</span>` : "",
-    `<span class="sync-pill ${g.changes.length ? "warn" : "good"}">${ic("edit")}${g.changes.length} uncommitted file${g.changes.length === 1 ? "" : "s"}</span>`,
+    g.upstream ? `<span class="sync-pill ${g.ahead ? "warn" : "good"}">${g.ahead} commit${g.ahead === 1 ? "" : "s"} to push</span>` : `<span class="sync-pill warn">no upstream branch</span>`,
+    g.upstream ? `<span class="sync-pill ${g.behind ? "warn" : ""}">${g.behind} commit${g.behind === 1 ? "" : "s"} to pull</span>` : "",
+    `<span class="sync-pill ${g.changes.length ? "warn" : "good"}">${g.changes.length} uncommitted file${g.changes.length === 1 ? "" : "s"}</span>`,
   ].join("");
 
   const riskHtml = g.at_risk.length
     ? `<ul class="risk-list">${g.at_risk.map((r) => `
         <li>
-          <span class="r-ico">${ic("laptop")}</span>
           <div style="min-width:0">
-            <div class="r-path" title="${esc(r.path)}">${esc(r.path)}</div>
+            <div class="r-path" title="${esc(r.path)}">${chipDisk(r.exists ? "local" : "deleted", r.sources.some((x) => !HUMAN_SOURCES.includes(String(x).toLowerCase())))}${esc(r.path)}</div>
             <div class="r-meta">
               <span>${r.local_versions} snapshot${r.local_versions === 1 ? "" : "s"} not in git · latest ${esc(ago(r.latest_ts))}</span>
               ${r.sources.map((src) => srcBadge(src)).join("")}
@@ -648,45 +577,44 @@ function renderGit() {
             </div>
           </div>
           <div class="r-actions">
-            <button class="btn btn-sm" data-open="${esc(r.path)}" data-snap="${r.latest_id}">${ic("timeline")}History</button>
-            ${r.exists ? "" : `<button class="btn btn-sm btn-primary" data-recover="${esc(r.path)}" data-id="${r.latest_id}">${ic("restore")}Recover</button>`}
+            <button class="btn btn-sm" data-open="${esc(r.path)}" data-snap="${r.latest_id}">History</button>
+            ${r.exists ? "" : `<button class="btn btn-sm btn-primary" data-recover="${esc(r.path)}" data-id="${r.latest_id}">Recover</button>`}
           </div>
         </li>`).join("")}</ul>`
     : vc.pushed + vc.committed
-      ? `<div class="git-empty">${ic("check")}Every snapshot is committed to git. Nothing exists only on this machine.</div>`
-      : `<div class="git-empty">${ic("clock")}No snapshots yet. Start the watcher or take a checkpoint, then compare them with GitHub here.</div>`;
+      ? `<div class="git-empty">Every snapshot is committed to git. Nothing exists only on this machine.</div>`
+      : `<div class="git-empty">No snapshots yet. Start the watcher or take a checkpoint, then compare them with GitHub here.</div>`;
 
   const changesHtml = g.changes.length
     ? `<ul class="plain-list">${g.changes.map((c) => `<li>${gitLetter(c.status)}<span class="mono grow" title="${esc(c.path)}">${esc(c.path)}</span>
         ${c.tracked ? `<button class="link" data-open="${esc(c.path)}">History</button>` : `<span class="muted small">not watched</span>`}</li>`).join("")}</ul>`
-    : `<div class="git-empty">${ic("check")}Working tree clean.</div>`;
+    : `<div class="git-empty">Working tree clean.</div>`;
 
   const commitsHtml = g.unpushed_commits.length
     ? `<ul class="plain-list">${g.unpushed_commits.map((c) => `<li><span class="sha">${esc(c.sha.slice(0, 7))}</span>
         <span class="grow" title="${esc(c.subject)}">${esc(c.subject)}</span><time>${esc(ago(c.date.slice(0, 19)))}</time></li>`).join("")}</ul>`
-    : `<div class="git-empty">${ic("check")}${g.upstream ? "All commits are pushed." : "Set an upstream with git push -u to track this."}</div>`;
+    : `<div class="git-empty">${g.upstream ? "All commits are pushed." : "Set an upstream with git push -u to track this."}</div>`;
 
   setHTML(root, `
     <div class="card">
       <div class="git-head">
-        <span class="gh-ico">${ic(g.web_url ? "github" : "branch")}</span>
         <div class="gh-main">
-          <div class="gh-title"><span class="branch-chip">${ic("branch", "i-sm")}${esc(g.branch)}</span>${g.upstream ? `<span class="muted small">tracking ${esc(g.upstream)}</span>` : ""}</div>
+          <div class="gh-title"><span class="branch-chip">${esc(g.branch)}</span>${g.upstream ? `<span class="muted small">tracking ${esc(g.upstream)}</span>` : ""}</div>
           <div class="gh-sub" title="${esc(g.remote_url || "")}">${lc ? `Last commit ${esc(lc.sha.slice(0, 7))} · ${esc(lc.subject)} · ${esc(ago(lc.date.slice(0, 19)))}` : "No commits yet"}</div>
           <div class="sync-pills">${pills}</div>
         </div>
         <div class="gh-actions">
-          <button class="btn btn-sm" id="git-fetch">${ic("refresh")}<span class="lbl">Check GitHub</span></button>
+          <button class="btn btn-sm" id="git-fetch"><span class="lbl">Check GitHub</span></button>
           ${ghBtn}
-          <button class="btn btn-sm" data-switch-project>${ic("branch")}Connect another repo</button>
+          <button class="btn btn-sm" data-switch-project>Connect another repo</button>
         </div>
       </div>
       <div class="lanes">
-        <div class="lane" data-tone="green"><div class="l-top"><span class="l-ico">${ic("cloud")}</span><span class="l-name">On GitHub</span></div>
+        <div class="lane" data-tone="green"><div class="l-top"><span class="l-name">On GitHub</span></div>
           <div class="l-num">${vc.pushed}</div><p>snapshots whose exact content is pushed</p></div>
-        <div class="lane" data-tone="cyan"><div class="l-top"><span class="l-ico">${ic("commit")}</span><span class="l-name">Committed, not pushed</span></div>
+        <div class="lane" data-tone="cyan"><div class="l-top"><span class="l-name">Committed, not pushed</span></div>
           <div class="l-num">${vc.committed}</div><p>snapshots committed only on this machine</p></div>
-        <div class="lane" data-tone="amber"><div class="l-top"><span class="l-ico">${ic("laptop")}</span><span class="l-name">Only on this machine</span></div>
+        <div class="lane" data-tone="amber"><div class="l-top"><span class="l-name">Only on this machine</span></div>
           <div class="l-num">${vc.local}</div><p>snapshots never committed to git</p></div>
       </div>
     </div>
@@ -728,7 +656,7 @@ async function switchProject() {
     });
     Object.keys(shownStats).forEach((k) => delete shownStats[k]);
     $("#files-split").classList.remove("show-detail");
-    $("#file-detail").innerHTML = `<div class="empty-state"><span class="empty-ico">${ic("files")}</span><p>Select a file to browse its snapshot history, compare versions and restore.</p></div>`;
+    $("#file-detail").innerHTML = `<div class="empty-state"><p>Select a file to browse its snapshot history, compare versions and restore.</p></div>`;
     $("#verify-result").innerHTML = "";
     setHTML($("#git-root"), `<div class="card"><span class="sk sk-line"></span></div>`);
     await refresh();
@@ -767,7 +695,7 @@ function renderTimeline() {
     return c === f;
   });
   if (!evs.length) {
-    setHTML($("#timeline"), `<li class="muted" style="padding:12px 4px">${f === "ALL" ? "No events yet. Start the watcher and save a file." : "No events match this filter."}</li>`);
+    setHTML($("#timeline-list"), `<li class="muted" style="padding:12px 4px">${f === "ALL" ? "No events yet. Start the watcher and save a file." : "No events match this filter."}</li>`);
     return;
   }
   let html = "";
@@ -781,11 +709,11 @@ function renderTimeline() {
     html += `<li class="ev">
       <time datetime="${esc(ev.timestamp)}">${esc(clock(ev.timestamp))}</time>
       ${evIco(c)}
-      <span class="p" title="${esc(evPath(ev))}">${esc(evPath(ev))}<small>${EVENT_LABEL[c]}${ev.note ? ` · ${esc(ev.note)}` : ""}</small></span>
+      <span class="p" title="${esc(evPath(ev))}">${ev.snapshot_id || c === "DELETED" ? chipDisk(plasticOf(ev.snapshot_id, ev.path, c === "DELETED"), isAiEvent(ev)) : ""}${esc(evPath(ev))}${ev.note ? `<small>${esc(ev.note)}</small>` : ""}</span>
       ${ev.snapshot_id ? `<button class="link" data-open="${esc(target)}" data-snap="${ev.snapshot_id}" aria-label="Open snapshot ${ev.snapshot_id}">#${ev.snapshot_id}</button>` : "<span></span>"}
     </li>`;
   }
-  setHTML($("#timeline"), html);
+  setHTML($("#timeline-list"), html);
 }
 
 /* ---------------- deleted ---------------- */
@@ -801,11 +729,11 @@ function renderDeleted() {
           <div class="r-meta">Deleted ${esc(ago(d.deleted_at))} · ${d.snapshots} snapshot${d.snapshots === 1 ? "" : "s"} available</div>
         </div>
         <div class="r-actions">
-          <button class="btn btn-sm" data-open="${esc(d.path)}">${ic("timeline")}History</button>
-          ${d.latest_id ? `<button class="btn btn-sm btn-primary" data-recover="${esc(d.path)}" data-id="${d.latest_id}">${ic("restore")}Recover latest</button>` : ""}
+          <button class="btn btn-sm" data-open="${esc(d.path)}">History</button>
+          ${d.latest_id ? `<button class="btn btn-sm btn-primary" data-recover="${esc(d.path)}" data-id="${d.latest_id}">Recover latest</button>` : ""}
         </div>
       </li>`).join("")}</ul>`
-    : `<div class="celebrate"><span class="empty-ico">${ic("integrity")}</span><b>Nothing to recover</b><span>Every file CodeVault tracks is still on disk. If one is deleted, it appears here with a Recover button.</span></div>`);
+    : `<div class="celebrate"><b>Nothing to recover</b><span>Every file CodeVault tracks is still on disk. If one is deleted, it appears here with a Recover button.</span></div>`);
 }
 
 /* ---------------- integrity ---------------- */
@@ -818,16 +746,16 @@ async function runVerify() {
     const c = r.counts;
     $("#verify-result").innerHTML = `
       <div class="lanes verify-summary">
-        <div class="lane" data-tone="green"><div class="l-top"><span class="l-ico">${ic("check")}</span><span class="l-name">Valid</span></div>
+        <div class="lane" data-tone="green"><div class="l-top"><span class="l-name">Valid</span></div>
           <div class="l-num">${c.valid}</div><p>hash matches the database</p></div>
-        <div class="lane" data-tone="red"><div class="l-top"><span class="l-ico">${ic("alert")}</span><span class="l-name">Corrupted</span></div>
+        <div class="lane" data-tone="red"><div class="l-top"><span class="l-name">Corrupted</span></div>
           <div class="l-num">${c.corrupted}</div><p>content changed on disk</p></div>
-        <div class="lane" data-tone="amber"><div class="l-top"><span class="l-ico">${ic("trash")}</span><span class="l-name">Missing</span></div>
+        <div class="lane" data-tone="amber"><div class="l-top"><span class="l-name">Missing</span></div>
           <div class="l-num">${c.missing}</div><p>snapshot file not found</p></div>
       </div>
       <div class="verify-grid" role="list" aria-label="Per-snapshot results">${r.results.map((x, i) =>
         `<span role="listitem" class="cell ${x.state}" style="animation-delay:${Math.min(i * 14, 1500)}ms" title="#${x.id} ${esc(x.path)} · ${x.state}" aria-label="Snapshot ${x.id} ${esc(x.path)} ${x.state}"></span>`).join("")}</div>
-      <div class="verify-banner ${r.ok ? "ok" : "bad"}">${ic(r.ok ? "check" : "alert")}<span>${r.results.length
+      <div class="verify-banner ${r.ok ? "ok" : "bad"}"><span>${r.results.length
         ? r.ok ? `All ${c.valid} snapshots match their recorded SHA-256 hashes.` : "Some snapshots failed verification and will not be restored."
         : "No snapshots to verify yet."}</span></div>`;
   } catch (e) {
@@ -843,7 +771,7 @@ function renderSettings() {
   const c = state.overview?.config;
   if (!c) return;
   const tags = (arr) => arr.map((x) => `<span class="tag">${esc(x)}</span>`).join("");
-  $("#settings").innerHTML = `
+  $("#settings-list").innerHTML = `
     <dt>Monitored extensions</dt><dd>${tags(c.monitored_extensions)}</dd>
     <dt>Ignored directories</dt><dd>${tags(c.ignored_directories)}</dd>
     <dt>Max snapshots per file</dt><dd><span class="tag">${c.max_snapshots}</span></dd>
@@ -864,6 +792,10 @@ function setOnline(on) {
   const live = $("#live-indicator");
   live.classList.toggle("off", !on);
   $(".lbl", live).textContent = on ? "Live" : "Offline";
+  if (!on) {
+    $("#hero-status").textContent = "Can’t reach CodeVault. This status may be out of date.";
+    $("#hero").classList.add("idle");
+  }
   if (!on) toast("Can’t reach the dashboard server", "Check that codevault ui is still running in your terminal.", "err");
 }
 
@@ -948,8 +880,8 @@ function show(view, { focus = false } = {}) {
   if (view === "timeline") renderTimeline();
   if (view === "deleted") renderDeleted();
   if (view === "git") renderGit();
-  if (view === "overview") renderChart();
-  if (window.matchMedia("(max-width: 1023px)").matches) window.scrollTo({ top: 0 });
+  // Section ids double as element ids (e.g. #timeline), so undo the browser's jump to them.
+  window.scrollTo({ top: 0 });
   if (focus) $("#main").focus({ preventScroll: true });
   try { history.replaceState(null, "", `#${view}`); } catch { /* ignore */ }
 }
@@ -966,15 +898,6 @@ $$("[data-nav]").forEach((nav) => nav.addEventListener("click", (e) => {
   if (b) show(b.dataset.view, { focus: true });
 }));
 
-$$("[data-theme-btn]").forEach((b) => b.addEventListener("click", cycleTheme));
-
-$("#range-seg").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-range]");
-  if (!b) return;
-  state.range = b.dataset.range;
-  $$("#range-seg button").forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-selected", x === b); });
-  renderChart();
-});
 
 $("#file-search").addEventListener("input", (e) => { state.fileFilter = e.target.value; renderFileList(); });
 
@@ -1087,7 +1010,6 @@ function showShortcuts() {
     <kbd>/</kbd><span>Filter files</span>
     <kbd>↑ ↓</kbd><span>Move through files and versions</span>
     <kbd>Enter</kbd><span>Open the focused item</span>
-    <kbd>t</kbd><span>Cycle light / dark / system theme</span>
     <kbd>Esc</kbd><span>Close dialog or go back</span>
     <kbd>?</kbd><span>Show this help</span>
   </div>`, { showOk: false, cancelLabel: "Close" });
@@ -1105,19 +1027,11 @@ document.addEventListener("keydown", (e) => {
   if (typing) return;
   if (/^[1-7]$/.test(e.key)) { show(VIEWS[+e.key - 1], { focus: true }); return; }
   if (e.key === "/") { e.preventDefault(); show("files"); $("#files-split").classList.remove("show-detail"); $("#file-search").focus(); return; }
-  if (e.key === "t") { cycleTheme(); return; }
   if (e.key === "?") showShortcuts();
-});
-
-let resizeT;
-window.addEventListener("resize", () => {
-  clearTimeout(resizeT);
-  resizeT = setTimeout(() => { if (state.view === "overview" && state.loaded) renderChart(); }, 120);
 });
 
 /* ---------------- boot ---------------- */
 
-applyTheme();
 const initial = location.hash.slice(1);
 if (VIEWS.includes(initial)) show(initial);
 window.addEventListener("hashchange", () => {

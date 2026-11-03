@@ -3,18 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eceef1">
   <title>CodeVault</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500&family=Permanent+Marker&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z' fill='%2322c55e'/%3E%3C/svg%3E">
-  <script>
-    // Apply saved theme before first paint to avoid a flash.
-    try { const t = localStorage.getItem("cv-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
-  </script>
 </head>
 <body>
   <!-- Icon sprite (Lucide-style, 24px grid, 2px stroke) -->
@@ -70,16 +65,13 @@
   <div class="app">
     <!-- Sidebar (desktop) / rail (laptop) -->
     <aside class="sidebar" aria-label="Primary">
-      <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path class="b-shield" d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/>
-          <path class="b-tick" d="m8.5 12 2.5 2.5 4.5-5"/>
-        </svg>
+      <a class="brand" href="/" title="CodeVault home">
+        <span class="mark brand-mark" aria-hidden="true"></span>
         <div class="brand-text">
           <div class="brand-name">CodeVault</div>
           <div class="brand-sub">Shadow backup for code</div>
         </div>
-      </div>
+      </a>
 
       <nav class="nav" data-nav>
         <button data-view="overview" class="active" aria-label="Overview"><svg class="i"><use href="#i-overview"/></svg><span class="lbl">Overview</span><kbd>1</kbd></button>
@@ -100,26 +92,21 @@
               <div class="daemon-sub" data-daemon-sub>checking…</div>
             </div>
           </div>
-          <button class="btn btn-block" data-daemon-btn disabled><svg class="i"><use href="#i-play"/></svg><span class="lbl">…</span></button>
+          <button class="btn btn-block" data-daemon-btn disabled><svg class="i rail-only"><use href="#i-play"/></svg><span class="lbl">…</span></button>
         </div>
-        <button class="btn btn-ghost theme-btn" data-theme-btn aria-label="Change theme"><svg class="i"><use href="#i-monitor"/></svg><span class="lbl">System theme</span></button>
       </div>
     </aside>
 
     <!-- Mobile/tablet app bar -->
     <header class="appbar">
-      <div class="brand brand-sm">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path class="b-shield" d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/>
-          <path class="b-tick" d="m8.5 12 2.5 2.5 4.5-5"/>
-        </svg>
+      <a class="brand brand-sm" href="/" title="CodeVault home">
+        <span class="mark brand-mark" aria-hidden="true"></span>
         <span class="brand-name">CodeVault</span>
-      </div>
+      </a>
       <div class="appbar-actions">
         <button class="pill-btn" data-daemon-btn disabled aria-label="Toggle watcher">
           <span class="pulse" data-daemon-dot></span><span class="lbl">…</span>
         </button>
-        <button class="icon-btn" data-theme-btn aria-label="Change theme"><svg class="i"><use href="#i-monitor"/></svg></button>
       </div>
     </header>
 
@@ -127,7 +114,7 @@
       <header class="topbar">
         <div class="topbar-text">
           <div class="title-row"><h1 id="project-name"><span class="sk sk-title"></span></h1>
-            <button class="btn btn-sm" data-switch-project aria-label="Switch project"><svg class="i"><use href="#i-folder"/></svg><span>Switch</span></button></div>
+            <button class="btn btn-sm" data-switch-project aria-label="Switch project">Switch project</button></div>
           <div class="path" id="project-path" title=""></div>
         </div>
         <div class="topbar-side">
@@ -137,91 +124,27 @@
       </header>
 
       <!-- OVERVIEW -->
-      <section class="view active" id="view-overview" aria-labelledby="h-overview">
-        <h2 class="sr-only" id="h-overview">Overview</h2>
+      <section class="view active" id="view-overview" aria-labelledby="hero-status">
         <div class="hero" id="hero">
-          <div class="shield-wrap">
-            <svg viewBox="0 0 120 120" class="shield" aria-hidden="true">
-              <circle cx="60" cy="60" r="54" class="ring"/>
-              <circle cx="60" cy="60" r="54" class="ring-progress" id="ring-progress"/>
-              <path d="M60 28 36 37v17c0 15 10.2 28.2 24 33 13.8-4.8 24-18 24-33V37L60 28z" class="shield-body"/>
-              <path d="m49 58 8 8 15-16" class="shield-tick"/>
-            </svg>
-          </div>
           <div class="hero-text">
-            <div class="hero-status" id="hero-status"><span class="sk sk-line" style="width:220px"></span></div>
-            <p id="hero-desc">Every save is captured, hashed with SHA-256 and stored atomically, so uncommitted work is never lost.</p>
-            <div class="hero-meta">
-              <span><svg class="i i-sm"><use href="#i-clock"/></svg>Last snapshot <b id="hero-last">—</b></span>
-              <span><svg class="i i-sm"><use href="#i-layers"/></svg>Retention <b id="hero-retention">—</b></span>
-            </div>
+            <h2 class="hero-status" id="hero-status">Checking your project…</h2>
+            <p id="hero-desc"></p>
+            <p class="hero-meta">Last snapshot <b id="hero-last">—</b> · Keeps <b id="hero-retention">—</b></p>
           </div>
-          <button class="btn btn-primary hero-cta" data-daemon-btn disabled><svg class="i"><use href="#i-play"/></svg><span class="lbl">…</span></button>
-        </div>
-
-        <div class="stats">
-          <div class="stat" data-tone="green">
-            <div class="stat-top"><span class="stat-label">Protected files</span><span class="stat-ico"><svg class="i"><use href="#i-files"/></svg></span></div>
-            <div class="stat-value" data-stat="protected_files"><span class="sk sk-num"></span></div>
-            <div class="stat-foot">active on disk</div>
-          </div>
-          <div class="stat" data-tone="cyan">
-            <div class="stat-top"><span class="stat-label">Snapshots</span><span class="stat-ico"><svg class="i"><use href="#i-layers"/></svg></span></div>
-            <div class="stat-value" data-stat="snapshots"><span class="sk sk-num"></span></div>
-            <div class="stat-foot"><span data-stat="pinned">0</span> pinned</div>
-          </div>
-          <div class="stat" data-tone="amber">
-            <div class="stat-top"><span class="stat-label">Recoverable</span><span class="stat-ico"><svg class="i"><use href="#i-recover"/></svg></span></div>
-            <div class="stat-value" data-stat="deleted_files"><span class="sk sk-num"></span></div>
-            <div class="stat-foot">deleted files, still safe</div>
-          </div>
-          <div class="stat" data-tone="violet">
-            <div class="stat-top"><span class="stat-label">Vault size</span><span class="stat-ico"><svg class="i"><use href="#i-db"/></svg></span></div>
-            <div class="stat-value" data-stat="storage"><span class="sk sk-num"></span></div>
-            <div class="stat-foot">deduplicated by hash</div>
-          </div>
+          <button class="btn btn-primary hero-cta" data-daemon-btn disabled><span class="lbl">…</span></button>
         </div>
 
         <button class="sync-strip" id="sync-strip" data-goto="git" hidden></button>
 
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-head">
-              <h3>Snapshot activity</h3>
-              <div class="seg" id="range-seg" role="tablist" aria-label="Time range">
-                <button data-range="1h" class="active" role="tab" aria-selected="true">1h</button>
-                <button data-range="24h" role="tab" aria-selected="false">24h</button>
-                <button data-range="7d" role="tab" aria-selected="false">7d</button>
-              </div>
-            </div>
-            <div class="chart" id="activity-chart"></div>
-            <p class="sr-only" id="chart-summary" aria-live="polite"></p>
-            <div class="legend">
-              <span><i class="sw sw-mod"></i>Modified</span>
-              <span><i class="sw sw-new"></i>Created / initial scan</span>
-              <span><i class="sw sw-pre"></i>Saved before a restore</span>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-head"><h3>Live feed</h3><span class="muted small">newest first</span></div>
-            <ul class="feed" id="feed" aria-live="polite">
-              <li class="sk-row"><span class="sk sk-ico"></span><span class="sk sk-line"></span></li>
-              <li class="sk-row"><span class="sk sk-ico"></span><span class="sk sk-line"></span></li>
-              <li class="sk-row"><span class="sk sk-ico"></span><span class="sk sk-line"></span></li>
-            </ul>
-          </div>
+        <div class="card">
+          <div class="card-head"><h3>Latest snapshots</h3><button class="link" data-goto="files">All files</button></div>
+          <div class="disks" id="disk-row" aria-label="Most recently saved files"></div>
+          <p class="disk-key"><span><i style="background:#1b1d22"></i>in git</span><span><i style="background:#1f4fd1"></i>committed, not pushed</span><span><i style="background:#d7263d"></i>only on this machine</span><span><i style="background:#f5c400"></i>AI edit</span></p>
         </div>
 
-        <div class="card how">
-          <div class="card-head"><h3>How a snapshot is made</h3><span class="muted small">pure Python · standard library + watchdog</span></div>
-          <ol class="pipeline">
-            <li><span class="p-ico"><svg class="i"><use href="#i-eye"/></svg></span><b>Watch</b><span>watchdog sees a save</span></li>
-            <li><span class="p-ico"><svg class="i"><use href="#i-clock"/></svg></span><b>Debounce</b><span>waits for edits to settle</span></li>
-            <li><span class="p-ico"><svg class="i"><use href="#i-hash"/></svg></span><b>Hash</b><span>SHA-256 of the content</span></li>
-            <li><span class="p-ico"><svg class="i"><use href="#i-layers"/></svg></span><b>Dedupe</b><span>skips if unchanged</span></li>
-            <li><span class="p-ico"><svg class="i"><use href="#i-db"/></svg></span><b>Store</b><span>atomic copy + SQLite row</span></li>
-            <li><span class="p-ico"><svg class="i"><use href="#i-scissors"/></svg></span><b>Prune</b><span>retention keeps it lean</span></li>
-          </ol>
+        <div class="card">
+          <div class="card-head"><h3>Recent activity</h3><button class="link" data-goto="timeline">Full timeline</button></div>
+          <ul class="feed" id="feed" aria-live="polite"><li class="feed-empty">Loading…</li></ul>
         </div>
       </section>
 
@@ -233,7 +156,6 @@
               <h2 id="h-files">Tracked files</h2>
             </div>
             <label class="search">
-              <svg class="i i-sm"><use href="#i-search"/></svg>
               <span class="sr-only">Filter files</span>
               <input id="file-search" type="search" placeholder="Filter files…  ( / )" autocomplete="off">
             </label>
@@ -241,7 +163,6 @@
           </div>
           <div class="card detail" id="file-detail">
             <div class="empty-state">
-              <span class="empty-ico"><svg class="i"><use href="#i-files"/></svg></span>
               <p>Select a file to browse its snapshot history, compare versions and restore.</p>
             </div>
           </div>
@@ -268,7 +189,7 @@
               <button class="chip" data-f="AI" aria-pressed="false">AI edits</button>
             </div>
           </div>
-          <ol class="timeline" id="timeline"></ol>
+          <ol class="timeline" id="timeline-list"></ol>
         </div>
       </section>
 
@@ -285,7 +206,7 @@
         <div class="card">
           <div class="card-head">
             <h2 id="h-integrity">Integrity verification</h2>
-            <button class="btn btn-primary" id="verify-btn"><svg class="i"><use href="#i-integrity"/></svg><span class="lbl">Run verification</span></button>
+            <button class="btn btn-primary" id="verify-btn"><span class="lbl">Run verification</span></button>
           </div>
           <p class="muted lead">Re-hashes every stored snapshot and compares it with the SHA-256 recorded in the database. Corrupted or missing snapshots are never restored.</p>
           <div id="verify-result"></div>
@@ -296,7 +217,7 @@
       <section class="view" id="view-settings" aria-labelledby="h-settings">
         <div class="card">
           <div class="card-head"><h2 id="h-settings">Effective configuration</h2><span class="muted small">change with <code>codevault config set</code></span></div>
-          <dl id="settings" class="settings"></dl>
+          <dl id="settings-list" class="settings"></dl>
         </div>
       </section>
     </main>

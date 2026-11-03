@@ -1,0 +1,44 @@
+name: Deploy landing page
+
+# Publishes codevault/web/static/landing.* to the gh-pages branch, which GitHub Pages serves.
+# The dashboard needs the local Python server, so its links point to the setup section instead.
+on:
+  push:
+    branches: [feature/backend]
+    paths: ["codevault/web/static/landing.*", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build static site
+        run: |
+          W=codevault/web/static
+          mkdir site
+          sed -e 's#href="/landing.css"#href="landing.css"#' -e 's#src="/landing.js"#src="landing.js"#' \
+              -e 's#href="/dashboard">Open dashboard#href="\#start">Run the dashboard#g' \
+              -e 's#href="/dashboard">Watch it happen in the dashboard#href="\#start">Run it to watch it happen#' \
+              "$W/landing.html" > site/index.html
+          cp "$W/landing.css" site/landing.css
+          sed 's#location.href = "/dashboard\#files";#location.hash = "start";#' "$W/landing.js" > site/landing.js
+          touch site/.nojekyll
+          # Fail rather than publish a page with links that 404 on Pages.
+          ! grep -n '"/dashboard\|"/landing' site/index.html site/landing.js
+      - name: Push to gh-pages
+        run: |
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy landing page from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
