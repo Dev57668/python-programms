@@ -634,10 +634,13 @@ async function switchProject() {
   let recent = [];
   try { recent = (await api("/api/projects")).recent; } catch { /* offline: just show the input */ }
   const current = state.overview?.project_dir;
+  const demo = !!window.CODEVAULT_DEMO; // hosted demo: only the bundled sample projects can be opened
   const ok = await openModal("Open a project", `
-    <p class="muted" style="margin:0 0 12px">Enter a folder on this computer, or paste a GitHub URL to clone it into <code>~/Documents</code>.</p>
+    <p class="muted" style="margin:0 0 12px">${demo
+      ? "This hosted demo runs in your browser, so it opens the sample projects below. To use CodeVault on your own repository, install it (3 steps on the home page)."
+      : "Enter a folder on this computer, or paste a GitHub URL to clone it into <code>~/Documents</code>."}</p>
     <label class="search" style="margin:0"><span class="sr-only">Folder path or GitHub URL</span>
-      <input id="project-input" placeholder="~/Documents/my-app  or  https://github.com/you/repo" autocomplete="off" spellcheck="false"></label>
+      <input id="project-input" placeholder="${demo ? "todo-cli" : "~/Documents/my-app  or  https://github.com/you/repo"}" autocomplete="off" spellcheck="false"></label>
     ${recent.filter((p) => p !== current).length ? `<div class="muted small" style="margin:14px 0 6px">Recent</div>
       <ul class="plain-list">${recent.filter((p) => p !== current).map((p) =>
         `<li><button class="link" data-pick="${esc(p)}" title="${esc(p)}">${esc(shortPath(p))}</button></li>`).join("")}</ul>` : ""}`,
@@ -645,7 +648,7 @@ async function switchProject() {
   if (!ok) return;
   const target = $("#project-input").value.trim();
   if (!target) return;
-  const isUrl = /github\.com[:/]/.test(target);
+  const isUrl = /github\.com[:/]/.test(target) && !demo;
   toast(isUrl ? "Cloning repository…" : "Opening project…", isUrl ? "Large repositories can take a minute." : target, "info");
   try {
     const r = await api("/api/project", { target });

@@ -2,7 +2,7 @@
 
 CodeVault is a lightweight local shadow-backup tool for developers. It watches a project directory and preserves timestamped snapshots of source files so uncommitted work can be recovered after accidental deletion, overwrite, or unwanted changes.
 
-**Landing page:** https://python-programms.vercel.app (the dashboard itself runs locally with `codevault ui`).
+**Live demo:** https://python-programms.vercel.app. The dashboard there is an interactive demo that runs entirely in your browser on three sample projects (restore, pin, verify, the watcher switch and project switching all work; nothing is uploaded, and **Reset demo** starts over). To use CodeVault on your own code, run the real dashboard locally with `codevault ui`.
 
 **CodeVault complements Git. It does not replace Git.**
 While Git is for commits, branches, collaboration, and remote history, CodeVault provides local protection of recent/uncommitted states, rapid snapshot recovery, and protection from accidental local deletion/overwrite.
