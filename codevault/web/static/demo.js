@@ -7,7 +7,7 @@
 (() => {
   const real = window.fetch.bind(window);
   const base = document.currentScript.src.replace(/demo\.js.*$/, "demo/");
-  const KEY = "codevault-demo-v2";
+  const KEY = "codevault-demo-v3";
   const MIN = 60000;
   window.CODEVAULT_DEMO = true;
 
@@ -81,13 +81,14 @@
         config: p.config, commits: p.commits.map((c) => ({ ...c, ts: now - c.ago_min * MIN })), snapshots, disk, deletedAt,
         daemon: { running: true, pid: 4242 + pi }, nextId: Math.max(...snapshots.map((s) => s.id)) + 1 });
     }
-    return { v: 2, current: projects[0].name, lastSeen: now, projects };
+    projects.forEach(fixHead);
+    return { v: 3, current: projects[0].name, lastSeen: now, projects };
   }
 
   async function init() {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(KEY) || "null"); } catch { /* ignore */ }
-    if (stored && stored.v === 2) {
+    if (stored && stored.v === 3) {
       S = stored;
       const gap = Date.now() - S.lastSeen;
       if (gap > 60 * MIN) { // keep the "a few minutes ago" feel for returning visitors
@@ -111,7 +112,16 @@
   const tracked = (p) => [...new Set([...p.snapshots].sort((a, b) => a.ts - b.ts).map((s) => s.path))];
   const exists = (p, path) => p.disk[path] != null;
   const meta = (s) => ({ id: s.id, relative_path: s.path, snapshot_path: `.lifejacket/snapshots/${s.path}.${stamp(s.ts)}.bak`, timestamp: fmt(s.ts), hash: s.hash, size: s.size, event_type: s.event_type, pinned: s.pinned, note: s.note });
-  const headOf = (p, path) => { const f = forFile(p, path); return (f.filter((s) => s.git === "committed").pop() || f.filter((s) => s.git === "pushed").pop())?.content ?? null; };
+  // What HEAD holds for each file, fixed when the project is loaded: the demo never commits, so restores must not move it.
+  function fixHead(p) {
+    p.head = {};
+    for (const path of new Set(p.snapshots.map((s) => s.path))) {
+      const f = p.snapshots.filter((s) => s.path === path).sort((a, b) => a.ts - b.ts || a.id - b.id);
+      const h = f.filter((s) => s.git === "committed").pop() || f.filter((s) => s.git === "pushed").pop();
+      if (h) p.head[path] = h.content;
+    }
+  }
+  const headOf = (p, path) => p.head[path] ?? null;
   const changesOf = (p) => {
     const out = {};
     for (const path of tracked(p)) {
@@ -125,6 +135,62 @@
     const m = p.snapshots.filter((s) => s.content === content).map((s) => s.git);
     return m.includes("pushed") ? "pushed" : m.includes("committed") ? "committed" : "local";
   };
+
+  /* ---------- "Connect another repo": import a PUBLIC GitHub repo in the browser ----------
+     Reads up to 8 source files and their last 4 commits each straight from GitHub (api.github.com and
+     raw.githubusercontent.com both allow browser requests). Every imported version is already on GitHub,
+     so it is labelled "on GitHub"; restoring an older one then shows up as an uncommitted change. */
+  const GH = "https://api.github.com/repos/";
+  function parseRepo(t) {
+    const m = t.trim().match(/^(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:|github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/#?].*)?$/i);
+    return m && !/^[~.]/.test(t.trim()) ? { owner: m[1], repo: m[2] } : null;
+  }
+  async function gh(path) {
+    let r;
+    try { r = await real(GH + path, { headers: { Accept: "application/vnd.github+json" } }); } catch { throw fail("Couldn't reach GitHub. Check your internet connection.", 502); }
+    if (r.status === 404) throw fail("No public GitHub repository at that address. The demo can only open public repositories.", 404);
+    if (r.status === 403 || r.status === 429) {
+      const reset = Number(r.headers.get("x-ratelimit-reset")) * 1000, mins = reset ? Math.max(1, Math.ceil((reset - Date.now()) / MIN)) : 60;
+      throw fail(`GitHub limits visitors without an account to 60 requests an hour, and that limit is used up. Try again in about ${mins} min.`, 429);
+    }
+    if (!r.ok) throw fail(`GitHub answered ${r.status}.`, 502);
+    return r.json();
+  }
+  async function importGithub({ owner, repo }) {
+    const info = await gh(`${owner}/${repo}`), branch = info.default_branch, full = info.full_name;
+    const exts = cur().config.monitored_extensions;
+    const tree = await gh(`${full}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+    const files = (tree.tree || []).filter((f) => f.type === "blob" && f.size <= 40000 && exts.some((e) => f.path.endsWith(e))
+      && !/(^|\/)(node_modules|vendor|dist|build|\.venv|venv|__pycache__)\//.test(f.path) && !/\.min\.js$/.test(f.path))
+      .sort((a, b) => a.path.split("/").length - b.path.split("/").length || a.path.localeCompare(b.path)).slice(0, 8);
+    if (!files.length) throw fail(`${full} has no source files CodeVault watches (${exts.join(" ")}).`, 422);
+    const enc = (p) => p.split("/").map(encodeURIComponent).join("/"), commits = new Map(), snaps = [];
+    await Promise.all(files.map(async (f) => {
+      const list = (await gh(`${full}/commits?path=${encodeURIComponent(f.path)}&sha=${encodeURIComponent(branch)}&per_page=4`)).reverse();
+      let prev = null;
+      for (const c of list) {
+        const r = await real(`https://raw.githubusercontent.com/${full}/${c.sha}/${enc(f.path)}`);
+        if (!r.ok) continue;
+        const content = await r.text(), ts = Date.parse(c.commit.committer?.date || c.commit.author.date);
+        commits.set(c.sha, { sha: c.sha, subject: c.commit.message.split("\n")[0], ts, pushed: true });
+        if (content === prev) continue;
+        snaps.push({ path: f.path, ts, event_type: prev == null ? "created" : "modified", pinned: 0, note: null, git: "pushed", content, hash: await sha256(content), size: bytes(content) });
+        prev = content;
+      }
+    }));
+    if (!snaps.length) throw fail(`Couldn't read any files from ${full}.`, 502);
+    snaps.sort((a, b) => a.ts - b.ts).forEach((s, i) => { s.id = i + 1; });
+    const disk = {};
+    snaps.forEach((s) => { disk[s.path] = s.content; });
+    const allC = [...commits.values()].sort((a, b) => b.ts - a.ts);
+    let name = info.name; while (S.projects.some((p) => p.name === name)) name += "-2";
+    const p = { name, dir: `github.com/${full}`, branch, upstream: `origin/${branch}`, ahead: 0, behind: 0, remoteBehind: 0, config: cur().config,
+      commits: allC.slice(0, 5), snapshots: snaps, disk, deletedAt: {}, daemon: { running: true, pid: 5000 + S.projects.length }, nextId: snaps.length + 1,
+      github: { full, web: info.html_url, headSha: allC[0]?.sha } };
+    fixHead(p);
+    S.projects.push(p);
+    return p;
+  }
 
   const routes = {
     GET: {
@@ -146,7 +212,7 @@
       },
       "/api/history"(q) {
         const p = cur(), path = q.get("path") || "";
-        return { path, exists: exists(p, path), is_repo: true, github_url: null,
+        return { path, exists: exists(p, path), is_repo: true, github_url: p.github ? `${p.github.web}/blob/${p.branch}/${path}` : null,
           snapshots: forFile(p, path).reverse().map((s) => ({ ...meta(s), size_str: size(s.size), git: s.git })) };
       },
       "/api/snapshot"(q) { const s = snapById(cur(), q.get("id")); return { ...meta(s), binary: false, content: s.content }; },
@@ -183,7 +249,7 @@
         const unpushed = p.commits.filter((c) => !c.pushed).map((c) => ({ sha: c.sha, subject: c.subject, date: `${fmt(c.ts)} +0000` }));
         const lastC = [...p.commits].sort((a, b) => b.ts - a.ts)[0];
         const tr = new Set(tracked(p));
-        return { is_repo: true, branch: p.branch, upstream: p.upstream, ahead: unpushed.length, behind: p.behind, remote_url: "origin (sample remote)", web_url: null,
+        return { is_repo: true, branch: p.branch, upstream: p.upstream, ahead: unpushed.length, behind: p.behind, remote_url: p.github ? `${p.github.web}.git` : "origin (sample remote)", web_url: p.github ? p.github.web : null,
           last_commit: lastC ? { sha: lastC.sha, subject: lastC.subject, date: `${fmt(lastC.ts)} +0000` } : null, unpushed_commits: unpushed, prefix: "",
           changes: Object.entries(ch).sort().map(([path, status]) => ({ path, status, tracked: tr.has(path) })), at_risk: atRisk,
           version_counts: Object.fromEntries(["pushed", "committed", "local"].map((k) => [k, p.snapshots.filter((s) => s.git === k).length])) };
@@ -214,13 +280,26 @@
         const counts = { valid: 0, corrupted: 0, missing: 0 }; results.forEach((r) => counts[r.state]++);
         return { ok: !counts.corrupted && !counts.missing, counts, results };
       },
-      async "/api/git/fetch"() { await sleep(700); const p = cur(); p.behind = p.remoteBehind; return { ok: true }; },
-      "/api/project"(b) {
+      async "/api/git/fetch"() {
+        const p = cur();
+        if (p.github && p.github.headSha) { // real check: how many commits GitHub has beyond the imported ones
+          const c = await gh(`${p.github.full}/compare/${p.github.headSha}...${encodeURIComponent(p.branch)}`);
+          p.behind = c.ahead_by || 0;
+        } else { await sleep(700); p.behind = p.remoteBehind; }
+        return { ok: true };
+      },
+      async "/api/project"(b) {
         const t = String(b.target || "").trim(), key = t.replace(/\/+$/, "").toLowerCase();
         if (!t) throw fail("Enter a project name or path");
         const hit = S.projects.find((p) => p.name.toLowerCase() === key || p.dir.toLowerCase() === key || key.endsWith("/" + p.name.toLowerCase()));
         if (hit) { S.current = hit.name; return { ok: true, project_dir: hit.dir, cloned: false }; }
-        if (/github\.com[:/]/.test(t)) throw fail("The hosted demo can't clone repositories, because it runs entirely in your browser. Pick one of the sample projects below, or install CodeVault (3 steps on the home page) to open your own repo.");
+        const gr = parseRepo(t);
+        if (gr) {
+          const known = S.projects.find((p) => p.github && p.github.full.toLowerCase() === `${gr.owner}/${gr.repo}`.toLowerCase());
+          const p = known || await importGithub(gr);
+          S.current = p.name;
+          return { ok: true, project_dir: p.dir, cloned: !known };
+        }
         throw fail(`There's no sample project called "${t}". Try: ${S.projects.map((p) => p.name).join(", ")}.`, 404);
       },
       "/api/daemon"(b) {

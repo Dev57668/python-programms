@@ -637,10 +637,10 @@ async function switchProject() {
   const demo = !!window.CODEVAULT_DEMO; // hosted demo: only the bundled sample projects can be opened
   const ok = await openModal("Open a project", `
     <p class="muted" style="margin:0 0 12px">${demo
-      ? "This hosted demo runs in your browser, so it opens the sample projects below. To use CodeVault on your own repository, install it (3 steps on the home page)."
+      ? "This hosted demo runs in your browser. Paste a <b>public</b> GitHub URL to load its source files and recent commit history from GitHub, or open a sample project below. To protect your own uncommitted work, install CodeVault (3 steps on the home page)."
       : "Enter a folder on this computer, or paste a GitHub URL to clone it into <code>~/Documents</code>."}</p>
     <label class="search" style="margin:0"><span class="sr-only">Folder path or GitHub URL</span>
-      <input id="project-input" placeholder="${demo ? "todo-cli" : "~/Documents/my-app  or  https://github.com/you/repo"}" autocomplete="off" spellcheck="false"></label>
+      <input id="project-input" placeholder="${demo ? "https://github.com/you/repo  or  todo-cli" : "~/Documents/my-app  or  https://github.com/you/repo"}" autocomplete="off" spellcheck="false"></label>
     ${recent.filter((p) => p !== current).length ? `<div class="muted small" style="margin:14px 0 6px">Recent</div>
       <ul class="plain-list">${recent.filter((p) => p !== current).map((p) =>
         `<li><button class="link" data-pick="${esc(p)}" title="${esc(p)}">${esc(shortPath(p))}</button></li>`).join("")}</ul>` : ""}`,
@@ -648,8 +648,8 @@ async function switchProject() {
   if (!ok) return;
   const target = $("#project-input").value.trim();
   if (!target) return;
-  const isUrl = /github\.com[:/]/.test(target) && !demo;
-  toast(isUrl ? "Cloning repository…" : "Opening project…", isUrl ? "Large repositories can take a minute." : target, "info");
+  const isUrl = /github\.com[:/]/.test(target);
+  toast(isUrl ? (demo ? "Reading repository from GitHub…" : "Cloning repository…") : "Opening project…", isUrl ? (demo ? "Up to 8 source files and their last 4 commits." : "Large repositories can take a minute.") : target, "info");
   try {
     const r = await api("/api/project", { target });
     await Promise.all([inflight, gitInflight]);
@@ -664,7 +664,7 @@ async function switchProject() {
     setHTML($("#git-root"), `<div class="card"><span class="sk sk-line"></span></div>`);
     await refresh();
     if (state.view === "git") renderGit();
-    toast(r.cloned ? "Repository cloned" : "Project opened", r.project_dir);
+    toast(r.cloned ? (demo ? "Repository loaded from GitHub" : "Repository cloned") : "Project opened", r.project_dir);
   } catch (e) {
     toast("Couldn’t open the project", e.message, "err");
   }
