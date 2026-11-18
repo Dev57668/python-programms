@@ -12,6 +12,7 @@ Supported commands:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -223,6 +224,138 @@ def handle_timeline(args: argparse.Namespace, config: Config) -> None:
     engine = RecoveryEngine(project_root, config)
     engine.print_timeline(target_path)
 
+def handle_snapshot(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'snapshot' command: take a labelled checkpoint of files or a whole project."""
+    from codevault.backup import BackupEngine
+    targets = [Path(p).resolve() for p in (args.paths or ["."])]
+    project_root = find_project_root(targets[0], config)
+    engine = BackupEngine(project_root, config)
+    label = " · ".join(x for x in (args.source, args.note) if x) or None
+
+    files = []
+    for t in targets:
+        if t.is_dir():
+            for root, dirs, names in os.walk(t):
+                root_path = Path(root)
+                dirs[:] = [d for d in dirs if not config.is_ignored_path(root_path / d, project_root)]
+                files.extend(root_path / n for n in names)
+        elif t.is_file():
+            files.append(t)
+        else:
+            print(f"[Warning] Skipping '{t}': not found.")
+
+    saved = 0
+    for f in files:
+        if engine.create_snapshot(f, event_type="checkpoint", note=label):
+            saved += 1
+    print(f"[OK] Checkpoint{f' ({label})' if label else ''}: {saved} new snapshot(s), "
+          f"{len(files) - saved} file(s) unchanged or not monitored.")
+
+
+def handle_hook(args: argparse.Namespace, config: Config) -> None:
+    """
+    Handle 'hook' command: called by an AI coding tool around each file edit.
+    Reads the tool's JSON event on stdin. Never fails loudly, so it can't block the tool.
+    """
+    import json
+    try:
+        payload = json.load(sys.stdin)
+        tool_input = payload.get("tool_input") or {}
+        file_str = tool_input.get("file_path") or tool_input.get("notebook_path")
+        if not file_str:
+            return
+        file_path = Path(file_str)
+        if not file_path.is_absolute():
+            file_path = Path(payload.get("cwd") or ".") / file_path
+        file_path = file_path.resolve()
+
+        project_root = None
+        for parent in file_path.parents:
+            if (parent / config.snapshot_directory_name).exists():
+                project_root = parent
+                break
+        if project_root is None:
+            project_root = Path(payload.get("cwd") or file_path.parent).resolve()
+
+        from codevault.backup import BackupEngine
+        engine = BackupEngine(project_root, config)
+        tool = payload.get("tool_name") or "edit"
+        if payload.get("hook_event_name") == "PreToolUse":
+            if file_path.is_file():
+                engine.create_snapshot(file_path, event_type="pre_ai", note=f"{args.agent} · before {tool}")
+        else:
+            engine.create_snapshot(file_path, event_type="ai_edit", note=f"{args.agent} · {tool}", annotate_duplicate=True)
+    except Exception:
+        pass
+
+
+CLAUDE_HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit"
+
+
+def _hook_command(agent: str) -> str:
+    """Shell command an AI tool should run, pinned to this Python interpreter."""
+    exe = sys.executable
+    if os.name == "nt":
+        exe_q = f'"{exe}"'
+    else:
+        import shlex
+        exe_q = shlex.quote(exe)
+    return f"{exe_q} -m codevault.cli hook {agent}"
+
+
+def handle_hooks(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'hooks install|remove claude': wire CodeVault into Claude Code's project settings."""
+    import json
+    project = Path(args.directory).resolve()
+    settings_path = project / ".claude" / "settings.json"
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"[Error] Could not read {settings_path}: {e}")
+            sys.exit(1)
+
+    hooks = settings.setdefault("hooks", {})
+    marker = "codevault.cli hook claude"
+    for event in ("PreToolUse", "PostToolUse"):
+        groups = [g for g in hooks.get(event, [])
+                  if not any(marker in h.get("command", "") for h in g.get("hooks", []))]
+        if args.action == "install":
+            groups.append({
+                "matcher": CLAUDE_HOOK_MATCHER,
+                "hooks": [{"type": "command", "command": _hook_command("claude")}],
+            })
+        if groups:
+            hooks[event] = groups
+        else:
+            hooks.pop(event, None)
+    if not hooks:
+        settings.pop("hooks", None)
+
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    if args.action == "install":
+        print(f"[OK] Claude Code will now snapshot files before and after each edit in {project}")
+        print(f"     Hooks written to {settings_path}")
+    else:
+        print(f"[OK] Removed CodeVault hooks from {settings_path}")
+
+
+def handle_ui(args: argparse.Namespace, config: Config) -> None:
+    """Handle 'ui' command."""
+    target_dir = Path(args.directory).resolve()
+    if not target_dir.is_dir():
+        print(f"[Error] '{args.directory}' is not a valid directory.")
+        sys.exit(1)
+    project_root = find_project_root(target_dir, config)
+    from codevault.web.server import serve
+    try:
+        serve(project_root, config, port=args.port, open_browser=not args.no_browser)
+    except OSError as e:
+        print(f"[Error] Could not start dashboard on port {args.port}: {e}")
+        sys.exit(1)
+
 def handle_config(args: argparse.Namespace, config: Config) -> None:
     """Handle 'config' command."""
     target_dir = Path(args.directory).resolve()
@@ -250,6 +383,7 @@ Examples:
   python main.py restore src/app.py --id 2 --yes
   python main.py snapshots .
   python main.py clean .
+  python main.py ui .
         """
     )
 
@@ -365,6 +499,28 @@ Examples:
     timeline_parser = subparsers.add_parser("timeline", help="Show chronological events for a file or directory")
     timeline_parser.add_argument("target", help="Path to source file or directory")
 
+    # Command: snapshot (manual / AI-tool checkpoint)
+    snapshot_parser = subparsers.add_parser("snapshot", help="Take a labelled checkpoint of files or a whole project")
+    snapshot_parser.add_argument("paths", nargs="*", help="Files or directories (default: .)")
+    snapshot_parser.add_argument("--source", default=None, help="Who made the change, e.g. antigravity, claude, manual")
+    snapshot_parser.add_argument("--note", default=None, help="Short description, e.g. 'before agent run'")
+
+    # Command: hook (called by AI coding tools)
+    hook_parser = subparsers.add_parser("hook", help="Snapshot hook for AI coding tools (reads event JSON on stdin)")
+    hook_parser.add_argument("agent", help="Name of the tool calling the hook, e.g. claude")
+
+    # Command: hooks (install/remove AI tool integration)
+    hooks_parser = subparsers.add_parser("hooks", help="Install or remove AI tool hooks (Claude Code)")
+    hooks_parser.add_argument("action", choices=["install", "remove"], help="install or remove")
+    hooks_parser.add_argument("tool", choices=["claude"], help="Tool to integrate with")
+    hooks_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+
+    # Command: ui
+    ui_parser = subparsers.add_parser("ui", help="Open the web dashboard in your browser")
+    ui_parser.add_argument("directory", nargs="?", default=".", help="Project directory (default: .)")
+    ui_parser.add_argument("--port", type=int, default=8765, help="Port to serve on (default: 8765)")
+    ui_parser.add_argument("--no-browser", action="store_true", help="Don't open a browser automatically")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -408,6 +564,10 @@ Examples:
         "restore-project": handle_restore_project,
         "diff": handle_diff,
         "timeline": handle_timeline,
+        "ui": handle_ui,
+        "snapshot": handle_snapshot,
+        "hook": handle_hook,
+        "hooks": handle_hooks,
     }
 
     handler = commands.get(args.command)

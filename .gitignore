@@ -22,3 +22,15 @@ __pycache__/
 .venv/
 .venv-test/
 *.egg-info/
+
+# Impeccable design scratch (contracts in .impeccable/surfaces are kept)
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/questions/
+.impeccable/archive/
+.impeccable/hook.cache.json
+
+# Vercel / local landing build output
+public/
+.vercel/
+.vercel
